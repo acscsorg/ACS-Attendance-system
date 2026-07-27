@@ -1,5 +1,7 @@
-from django.test import TestCase
+import json
+from django.test import TestCase, Client
 from django.db import IntegrityError
+from django.urls import reverse
 from datetime import date, time
 from .models import Student, Event, Attendance, SystemSetting
 
@@ -74,3 +76,55 @@ class SystemSettingModelTest(TestCase):
             semester="First Semester"
         )
         self.assertEqual(str(setting), "2026-2027 - First Semester")
+
+
+class StudentAPITestCase(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.student = Student.objects.create(
+            uid="ST-2026-0001",
+            student_number="21-1001",
+            name="Miguel Santos",
+            course="BS Computer Science",
+            year="2nd Year",
+            section="1",
+            status="Active"
+        )
+
+    def test_list_students(self):
+        response = self.client.get('/api/students/')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIsInstance(data, list)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]['uid'], "ST-2026-0001")
+
+    def test_create_student_api(self):
+        payload = {
+            "uid": "ST-2026-0002",
+            "student_number": "21-1002",
+            "name": "Bea Reyes",
+            "course": "BS Information Technology",
+            "year": "1st Year",
+            "section": "2",
+            "status": "Active"
+        }
+        response = self.client.post('/api/students/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(Student.objects.filter(uid="ST-2026-0002").exists())
+
+    def test_update_student_api(self):
+        payload = {
+            "name": "Miguel Santos Updated",
+            "status": "Inactive"
+        }
+        response = self.client.put('/api/students/ST-2026-0001/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.name, "Miguel Santos Updated")
+        self.assertEqual(self.student.status, "Inactive")
+
+    def test_delete_student_api(self):
+        response = self.client.delete('/api/students/ST-2026-0001/')
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Student.objects.filter(uid="ST-2026-0001").exists())
