@@ -128,3 +128,53 @@ class StudentAPITestCase(TestCase):
         response = self.client.delete('/api/students/ST-2026-0001/')
         self.assertEqual(response.status_code, 204)
         self.assertFalse(Student.objects.filter(uid="ST-2026-0001").exists())
+
+
+class EventAPITestCase(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.event = Event.objects.create(
+            name="General Assembly",
+            date=date(2026, 8, 15),
+            time=time(9, 0),
+            venue="Main Auditorium",
+            description="Semestral assembly",
+            status="Open"
+        )
+
+    def test_list_events(self):
+        response = self.client.get('/api/events/')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIsInstance(data, list)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]['name'], "General Assembly")
+
+    def test_create_event_api(self):
+        payload = {
+            "name": "Org Week Kickoff",
+            "date": "2026-08-20",
+            "time": "10:00:00",
+            "venue": "Covered Court",
+            "description": "Opening ceremony",
+            "status": "Open"
+        }
+        response = self.client.post('/api/events/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(Event.objects.filter(name="Org Week Kickoff").exists())
+
+    def test_update_event_api(self):
+        payload = {
+            "venue": "Function Hall A",
+            "status": "Closed"
+        }
+        response = self.client.put(f'/api/events/{self.event.pk}/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        self.event.refresh_from_db()
+        self.assertEqual(self.event.venue, "Function Hall A")
+        self.assertEqual(self.event.status, "Closed")
+
+    def test_delete_event_api(self):
+        response = self.client.delete(f'/api/events/{self.event.pk}/')
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Event.objects.filter(pk=self.event.pk).exists())
