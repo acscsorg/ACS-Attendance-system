@@ -249,10 +249,8 @@ class AttendanceScanAPITestCase(TestCase):
         self.assertIn("closed", data['message'].lower())
 
     def test_duplicate_scan_api(self):
-        # First scan
         Attendance.objects.create(student=self.active_student, event=self.open_event, officer="Officer J. Reyes")
         
-        # Second scan attempt
         payload = {
             "student_uid": "ST-2026-0001",
             "event_id": self.open_event.id,
@@ -271,3 +269,36 @@ class AttendanceScanAPITestCase(TestCase):
         self.assertIsInstance(data, list)
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]['student_uid'], "ST-2026-0001")
+
+
+class DashboardAndSettingsAPITestCase(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.s1 = Student.objects.create(uid="ST-1", student_number="1", name="A", course="C", year="1", section="1", status="Active")
+        self.s2 = Student.objects.create(uid="ST-2", student_number="2", name="B", course="C", year="1", section="1", status="Inactive")
+        self.e1 = Event.objects.create(name="E1", date=date(2026, 8, 1), time=time(9, 0), venue="V", status="Open")
+        self.e2 = Event.objects.create(name="E2", date=date(2026, 8, 2), time=time(9, 0), venue="V", status="Closed")
+        Attendance.objects.create(student=self.s1, event=self.e1, officer="Officer J")
+
+    def test_dashboard_stats_api(self):
+        response = self.client.get('/api/dashboard-stats/')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['total_students'], 2)
+        self.assertEqual(data['active_students'], 1)
+        self.assertEqual(data['total_events'], 2)
+        self.assertEqual(data['open_events'], 1)
+        self.assertEqual(data['total_attendance'], 1)
+
+    def test_get_and_update_settings_api(self):
+        res = self.client.get('/api/settings/')
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data['academic_year'], "2026-2027")
+
+        payload = {"academic_year": "2027-2028", "semester": "Second Semester"}
+        res2 = self.client.put('/api/settings/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(res2.status_code, 200)
+        data2 = res2.json()
+        self.assertEqual(data2['academic_year'], "2027-2028")
+        self.assertEqual(data2['semester'], "Second Semester")

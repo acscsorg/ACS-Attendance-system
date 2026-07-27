@@ -220,3 +220,50 @@ def attendance_list(request):
         } for r in records]
 
         return JsonResponse(data, safe=False)
+
+
+@csrf_exempt
+def dashboard_stats(request):
+    if request.method == 'GET':
+        total_students = Student.objects.count()
+        active_students = Student.objects.filter(status='Active').count()
+        total_events = Event.objects.count()
+        open_events = Event.objects.filter(status='Open').count()
+        total_attendance = Attendance.objects.count()
+
+        max_possible = active_students * total_events
+        attendance_pct = round((total_attendance / max_possible) * 100) if max_possible > 0 else 0
+
+        return JsonResponse({
+            'total_students': total_students,
+            'active_students': active_students,
+            'total_events': total_events,
+            'open_events': open_events,
+            'total_attendance': total_attendance,
+            'overall_attendance_pct': attendance_pct
+        })
+
+
+@csrf_exempt
+def system_settings(request):
+    setting, _ = SystemSetting.objects.get_or_create(id=1)
+
+    if request.method == 'GET':
+        return JsonResponse({
+            'id': setting.id,
+            'academic_year': setting.academic_year,
+            'semester': setting.semester
+        })
+
+    elif request.method in ['PUT', 'POST']:
+        data = json.loads(request.body)
+        if 'academic_year' in data:
+            setting.academic_year = data['academic_year']
+        if 'semester' in data:
+            setting.semester = data['semester']
+        setting.save()
+        return JsonResponse({
+            'id': setting.id,
+            'academic_year': setting.academic_year,
+            'semester': setting.semester
+        }, status=200)
