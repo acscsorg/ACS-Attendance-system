@@ -186,7 +186,7 @@ tr:last-child td{border-bottom:none;}
 
 .empty{text-align:center;padding:34px 10px;color:var(--slate);font-size:13px;}
 .toast-wrap{position:fixed;bottom:20px;right:20px;z-index:100;display:flex;flex-direction:column;gap:8px;}
-.toast{background:var(--ink);color:#fff;padding:10px 16px;border-radius:9px;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.25);animation:toastin .18s ease;}
+.toast{background:var(--ink);color:#fff;padding:10px 16px;border-radius:99px;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.25);animation:toastin .18s ease;}
 .toast.err{background:var(--rust);}
 .toast.ok{background:var(--forest);}
 @keyframes toastin{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}

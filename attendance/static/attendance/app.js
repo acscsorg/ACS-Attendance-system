@@ -38,14 +38,25 @@ const SECTIONS = ['1','2','3'];
 /* ============================= PERSISTENCE ============================= */
 async function loadData(){
   try{
-    const res = await window.storage.get('attendqr-data', true);
-    const parsed = JSON.parse(res.value);
-    state.students = parsed.students || [];
-    state.events = parsed.events || [];
-    state.attendance = parsed.attendance || [];
-    state.settings = parsed.settings || state.settings;
-    state.officers = parsed.officers || state.officers;
-    if(!state.students.length) seed();
+    let parsed = null;
+    if (window.storage && window.storage.get) {
+      const res = await window.storage.get('attendqr-data', true);
+      if (res && res.value) parsed = JSON.parse(res.value);
+    } else if (window.localStorage) {
+      const res = localStorage.getItem('attendqr-data');
+      if (res) parsed = JSON.parse(res);
+    }
+    if (parsed) {
+      state.students = parsed.students || [];
+      state.events = parsed.events || [];
+      state.attendance = parsed.attendance || [];
+      state.settings = parsed.settings || state.settings;
+      state.officers = parsed.officers || state.officers;
+      if(!state.students.length) seed();
+    } else {
+      seed();
+      await persist();
+    }
   }catch(e){
     seed();
     await persist();
@@ -57,10 +68,15 @@ async function loadData(){
 }
 async function persist(){
   try{
-    await window.storage.set('attendqr-data', JSON.stringify({
+    const dataStr = JSON.stringify({
       students: state.students, events: state.events, attendance: state.attendance,
       settings: state.settings, officers: state.officers
-    }), true);
+    });
+    if (window.storage && window.storage.set) {
+      await window.storage.set('attendqr-data', dataStr, true);
+    } else if (window.localStorage) {
+      localStorage.setItem('attendqr-data', dataStr);
+    }
   }catch(e){ console.error('save failed', e); toast('Could not save data','err'); }
 }
 
