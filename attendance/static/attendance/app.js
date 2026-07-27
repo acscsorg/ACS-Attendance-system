@@ -31,83 +31,112 @@ let state = {
 let html5QrInstance = null;
 let scanCooldown = false;
 
-const COURSES = ['BS Computer Science','BS Information Technology'];
+const COURSES = ['BS Computer Science'];
 const YEARS = ['1st Year','2nd Year','3rd Year','4th Year'];
 const SECTIONS = ['1','2','3'];
 
-/* ============================= PERSISTENCE ============================= */
+/* ============================= PERSISTENCE & API SYNC ============================= */
 async function loadData(){
   try{
-    let parsed = null;
-    if (window.storage && window.storage.get) {
-      const res = await window.storage.get('attendqr-data', true);
-      if (res && res.value) parsed = JSON.parse(res.value);
-    } else if (window.localStorage) {
-      const res = localStorage.getItem('attendqr-data');
-      if (res) parsed = JSON.parse(res);
+    const [studentsRes, eventsRes, attendanceRes, settingsRes] = await Promise.all([
+      fetch('/api/students/').then(r=>r.json()),
+      fetch('/api/events/').then(r=>r.json()),
+      fetch('/api/attendance/').then(r=>r.json()),
+      fetch('/api/settings/').then(r=>r.json()),
+    ]);
+    
+    state.students = (studentsRes || []).map(s => ({
+      id: s.id,
+      uid: s.uid,
+      studentNumber: s.student_number,
+      name: s.name,
+      course: s.course,
+      year: s.year,
+      section: s.section,
+      status: s.status
+    }));
+
+    state.events = (eventsRes || []).map(e => ({
+      id: e.id,
+      name: e.name,
+      date: e.date,
+      time: e.time,
+      venue: e.venue,
+      description: e.description,
+      status: e.status
+    }));
+
+    state.attendance = (attendanceRes || []).map(a => ({
+      id: a.id,
+      studentUid: a.student_uid,
+      eventId: a.event_id,
+      timestamp: a.timestamp,
+      officer: a.officer
+    }));
+
+    if (settingsRes && settingsRes.academic_year) {
+      state.settings = {
+        academicYear: settingsRes.academic_year,
+        semester: settingsRes.semester
+      };
     }
-    if (parsed) {
-      state.students = parsed.students || [];
-      state.events = parsed.events || [];
-      state.attendance = parsed.attendance || [];
-      state.settings = parsed.settings || state.settings;
-      state.officers = parsed.officers || state.officers;
-      if(!state.students.length) seed();
-    } else {
-      seed();
-      await persist();
+
+    if (!state.students.length && !state.events.length) {
+      await seedToBackend();
+      return loadData();
     }
   }catch(e){
-    seed();
-    await persist();
+    console.error('Error fetching data from Django API:', e);
   }
   state.ready = true;
   if(state.students.length) state.studentViewUid = state.students[0].uid;
   if(state.officers.length) state.officerName = state.officers[0];
   render();
 }
+
 async function persist(){
+  // Local persistence backup
   try{
     const dataStr = JSON.stringify({
       students: state.students, events: state.events, attendance: state.attendance,
       settings: state.settings, officers: state.officers
     });
-    if (window.storage && window.storage.set) {
-      await window.storage.set('attendqr-data', dataStr, true);
-    } else if (window.localStorage) {
-      localStorage.setItem('attendqr-data', dataStr);
-    }
-  }catch(e){ console.error('save failed', e); toast('Could not save data','err'); }
+    if (window.localStorage) localStorage.setItem('attendqr-data', dataStr);
+  }catch(e){}
 }
 
-function seed(){
+async function seedToBackend(){
   const names = ['Ana Dela Cruz','Miguel Santos','Bea Reyes','Carlo Mendoza','Diana Flores','Ethan Cruz','Fiona Garcia','Gabriel Torres','Hannah Ramos','Ivan Bautista','Jasmine Villanueva','Kyle Aquino','Liza Domingo','Marco Pascual','Nadia Rivera','Oscar Castillo','Paula Navarro','Quinn Salazar'];
-  state.students = names.map((n,i)=>({
-    uid: makeUid(i+1),
-    studentNumber: '21-'+String(1000+i),
+  const studentsToCreate = names.map((n,i)=>({
+    uid: 'ST-2026-'+String(i+1).padStart(4,'0'),
+    student_number: '21-'+String(1000+i),
     name: n,
     course: COURSES[i % COURSES.length],
     year: YEARS[i % YEARS.length],
     section: SECTIONS[i % SECTIONS.length],
     status: i===15 ? 'Inactive' : 'Active',
   }));
+
+  for (const s of studentsToCreate) {
+    await fetch('/api/students/', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(s) });
+  }
+
   const today = new Date();
   const fmt = (d)=> d.toISOString().slice(0,10);
   const past1 = new Date(today); past1.setDate(today.getDate()-21);
   const past2 = new Date(today); past2.setDate(today.getDate()-7);
   const upcoming = new Date(today); upcoming.setDate(today.getDate()+10);
-  state.events = [
-    {id:'EV-1001', name:'General Assembly', date: fmt(past1), time:'09:00', venue:'Main Auditorium', description:'Semestral general assembly for all members.', status:'Closed'},
-    {id:'EV-1002', name:'Leadership Workshop', date: fmt(past2), time:'13:00', venue:'Function Hall B', description:'Workshop on officer leadership skills.', status:'Closed'},
-    {id:'EV-1003', name:'Org Week Kickoff', date: fmt(today), time:'10:00', venue:'Covered Court', description:'Opening program for organization week.', status:'Open'},
-    {id:'EV-1004', name:'General Assembly Pt. 2', date: fmt(upcoming), time:'09:00', venue:'Main Auditorium', description:'Follow-up assembly to close the semester.', status:'Open'},
+
+  const eventsToCreate = [
+    {name:'General Assembly', date: fmt(past1), time:'09:00:00', venue:'Main Auditorium', description:'Semestral general assembly for all members.', status:'Closed'},
+    {name:'Leadership Workshop', date: fmt(past2), time:'13:00:00', venue:'Function Hall B', description:'Workshop on officer leadership skills.', status:'Closed'},
+    {name:'Org Week Kickoff', date: fmt(today), time:'10:00:00', venue:'Covered Court', description:'Opening program for organization week.', status:'Open'},
+    {name:'General Assembly Pt. 2', date: fmt(upcoming), time:'09:00:00', venue:'Main Auditorium', description:'Follow-up assembly to close the semester.', status:'Open'},
   ];
-  state.attendance = [];
-  state.students.forEach((s,i)=>{
-    if(s.status!=='Active') return;
-    if(i % 4 !== 0) state.attendance.push(mkAtt(s.uid,'EV-1001', past1, state.officers[i%3]));
-    if(i % 3 !== 0) state.attendance.push(mkAtt(s.uid,'EV-1002', past2, state.officers[i%3]));
-  });
+
+  for (const e of eventsToCreate) {
+    await fetch('/api/events/', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(e) });
+  }
 }
 function mkAtt(uid,eventId,dateObj,officer){
   const d = new Date(dateObj); d.setHours(9+Math.floor(Math.random()*3), Math.floor(Math.random()*59));
@@ -134,8 +163,8 @@ function fmtTime(d){ return new Date(d).toLocaleTimeString('en-US',{hour:'numeri
 function esc(s){ return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function activeStudents(){ return state.students.filter(s=>s.status==='Active'); }
 function studentByUid(uid){ return state.students.find(s=>s.uid===uid); }
-function eventById(id){ return state.events.find(e=>e.id===id); }
-function attendanceForEvent(id){ return state.attendance.filter(a=>a.eventId===id); }
+function eventById(id){ return state.events.find(e=>String(e.id)===String(id)); }
+function attendanceForEvent(id){ return state.attendance.filter(a=>String(a.eventId)===String(id)); }
 function attendanceForStudent(uid){ return state.attendance.filter(a=>a.studentUid===uid); }
 function studentAttendancePct(uid){
   const total = state.events.length || 1;
@@ -304,7 +333,7 @@ function renderDashboard(){
       <div class="panel-head">
         <h3>Event Snapshot</h3>
         <select class="select" id="dashEventSelect">
-          ${focusEvents.map(e=>`<option value="${e.id}" ${e.id===state.dashEventId?'selected':''}>${esc(e.name)}</option>`).join('')}
+          ${focusEvents.map(e=>`<option value="${e.id}" ${String(e.id)===String(state.dashEventId)?'selected':''}>${esc(e.name)}</option>`).join('')}
         </select>
       </div>
       <div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;">
@@ -353,15 +382,27 @@ function svgDonut(present,total){
     <text x="60" y="65" text-anchor="middle" font-family="Space Grotesk" font-size="22" font-weight="700" fill="#151E33">${Math.round(pct*100)}%</text>
   </svg>`;
 }
-function svgHBar(data){
-  const max = Math.max(1,...data.map(d=>d.value));
-  const rowH=28, width=420, height=data.length*rowH+6;
-  return `<svg width="100%" viewBox="0 0 ${width} ${height}" style="max-width:420px">
-    ${data.map((d,i)=>{
-      const y=i*rowH; const w = Math.max(3,(d.value/max)*260);
-      return `<text x="0" y="${y+17}" font-size="12" fill="#151E33" font-family="Inter">${esc(d.label)}</text>
-      <rect x="76" y="${y+5}" width="${w}" height="14" rx="4" fill="#C89B3C"/>
-      <text x="${76+w+8}" y="${y+16}" font-size="12" fill="#5B6478">${d.value}</text>`;
+function svgHBar(data, isPercent = false){
+  if (!data || !data.length) return '<div class="empty">No data available.</div>';
+  const max = Math.max(1, ...data.map(d=>d.value));
+  const labelWidth = 150;
+  const maxBarW = 200;
+  const totalWidth = labelWidth + maxBarW + 70;
+  const rowH = 32;
+  const height = data.length * rowH + 8;
+
+  return `<svg width="100%" viewBox="0 0 ${totalWidth} ${height}" style="max-width:100%;">
+    ${data.map((d, i) => {
+      const y = i * rowH;
+      const w = Math.max(4, (d.value / max) * maxBarW);
+      const displayLabel = d.label.length > 20 ? d.label.slice(0, 18) + '…' : d.label;
+      const valStr = isPercent ? d.value + '%' : d.value;
+      return `<g>
+        <title>${esc(d.label)}: ${valStr}</title>
+        <text x="0" y="${y + 19}" font-size="12" fill="#151E33" font-family="Inter">${esc(displayLabel)}</text>
+        <rect x="${labelWidth}" y="${y + 6}" width="${w}" height="16" rx="4" fill="#C89B3C"/>
+        <text x="${labelWidth + w + 8}" y="${y + 18}" font-size="12" font-weight="600" fill="#5B6478">${valStr}</text>
+      </g>`;
     }).join('')}
   </svg>`;
 }
@@ -403,8 +444,8 @@ function renderQrGenerator(){
   </div>
   `;
 }
-function badgeCard(s, size){
-  const idPart = 'qrimg-'+s.uid.replace(/[^a-zA-Z0-9]/g,'');
+function badgeCard(s, prefix = 'qrimg-'){
+  const idPart = prefix + s.uid.replace(/[^a-zA-Z0-9]/g,'');
   return `<div class="badge">
     <div class="badge-top">
       <div class="org">AttendQR · Campus ID</div>
@@ -529,6 +570,9 @@ function renderEvents(){
 }
 
 /* ============================= SCANNER ============================= */
+let lastScannedUid = null;
+let lastScannedTime = 0;
+
 function renderScanner(){
   const openEvents = state.events.filter(e=>e.status==='Open');
   if(!state.scannerEventId || !eventById(state.scannerEventId)) state.scannerEventId = openEvents[0]?.id || null;
@@ -536,7 +580,7 @@ function renderScanner(){
   let resClass='idle', resHtml = '<div style="font-size:34px;">📷</div><div class="s-meta">Scan a QR code or enter a UID to begin.</div>';
   if(res){
     if(res.status==='present'){ resClass='present'; resHtml = `<div class="big-status" style="color:var(--forest)">✓ PRESENT</div><div class="s-name">${esc(res.student.name)}</div><div class="s-meta">${esc(res.student.course)} · ${esc(res.student.year)}</div><div class="s-meta mono">${esc(res.student.uid)}</div>`; }
-    else if(res.status==='dup'){ resClass='dup'; resHtml = `<div class="big-status" style="color:var(--amber)">ALREADY SCANNED</div><div class="s-name">${esc(res.student.name)}</div><div class="s-meta">Recorded at ${fmtTime(res.prevTime)}</div>`; }
+    else if(res.status==='dup'){ resClass='dup'; resHtml = `<div class="big-status" style="color:var(--amber)">ALREADY SCANNED</div><div class="s-name">${esc(res.student.name)}</div><div class="s-meta">Recorded previously</div>`; }
     else { resClass='invalid'; resHtml = `<div class="big-status" style="color:var(--rust)">✕ INVALID QR CODE</div><div class="s-meta">"${esc(res.raw)}" does not match any student UID.</div>`; }
   }
   return `
@@ -565,58 +609,131 @@ function renderScanner(){
       <div class="scan-result ${resClass}">${resHtml}</div>
       <div class="panel" style="margin-top:14px;">
         <h3 style="font-size:14px;margin-bottom:8px;">Recent Scans This Session</h3>
-        ${state.recentScans.length ? state.recentScans.slice(0,6).map(r=>`
-          <div class="recent-scan-row">
-            <div>${esc(r.name)}</div>
-            <div class="pill ${r.status==='present'?'pill-green':r.status==='dup'?'pill-amber':'pill-rust'}">${r.status==='present'?'Present':r.status==='dup'?'Duplicate':'Invalid'}</div>
-          </div>`).join('') : '<div class="empty">No scans yet this session.</div>'}
+        <div id="recentScansContainer">
+          ${renderRecentScansRows()}
+        </div>
       </div>
     </div>
   </div>
   `;
 }
 
-function handleScan(rawUid){
-  if(scanCooldown) return;
-  scanCooldown = true; setTimeout(()=>scanCooldown=false, 1200);
+function renderRecentScansRows(){
+  return state.recentScans.length ? state.recentScans.slice(0,6).map(r=>`
+    <div class="recent-scan-row">
+      <div>${esc(r.name)}</div>
+      <div class="pill ${r.status==='present'?'pill-green':r.status==='dup'?'pill-amber':'pill-rust'}">${r.status==='present'?'Present':r.status==='dup'?'Duplicate':'Invalid'}</div>
+    </div>`).join('') : '<div class="empty">No scans yet this session.</div>';
+}
+
+function updateScanUI(){
+  const scanResultEl = document.querySelector('.scan-result');
+  if(scanResultEl && state.lastScan){
+    const res = state.lastScan;
+    let resClass='idle', resHtml = '';
+    if(res.status==='present'){ resClass='present'; resHtml = `<div class="big-status" style="color:var(--forest)">✓ PRESENT</div><div class="s-name">${esc(res.student.name)}</div><div class="s-meta">${esc(res.student.course)} · ${esc(res.student.year)}</div><div class="s-meta mono">${esc(res.student.uid)}</div>`; }
+    else if(res.status==='dup'){ resClass='dup'; resHtml = `<div class="big-status" style="color:var(--amber)">ALREADY SCANNED</div><div class="s-name">${esc(res.student.name)}</div><div class="s-meta">Recorded previously</div>`; }
+    else { resClass='invalid'; resHtml = `<div class="big-status" style="color:var(--rust)">✕ INVALID QR CODE</div><div class="s-meta">"${esc(res.raw)}" does not match any student UID.</div>`; }
+    
+    scanResultEl.className = 'scan-result ' + resClass;
+    scanResultEl.innerHTML = resHtml;
+  }
+
+  const container = document.getElementById('recentScansContainer');
+  if(container){
+    container.innerHTML = renderRecentScansRows();
+  }
+}
+
+async function handleScan(rawUid){
   const uid = (rawUid||'').trim();
-  const ev = eventById(state.scannerEventId);
-  if(!ev){ toast('Select an open event first','err'); return; }
-  const s = studentByUid(uid);
-  if(!s){
-    state.lastScan = {status:'invalid', raw: uid};
-    state.recentScans.unshift({name: uid || '(empty)', status:'invalid'});
-    beep('bad');
-  } else {
-    const existing = state.attendance.find(a=>a.studentUid===uid && a.eventId===ev.id);
-    if(existing){
-      state.lastScan = {status:'dup', student:s, prevTime: existing.timestamp};
-      state.recentScans.unshift({name:s.name, status:'dup'});
+  if (!uid) return;
+
+  const now = Date.now();
+  // Ignore duplicate scan triggers for the same QR code within 3 seconds
+  if (uid === lastScannedUid && (now - lastScannedTime) < 3000) {
+    return;
+  }
+  lastScannedUid = uid;
+  lastScannedTime = now;
+
+  const evId = state.scannerEventId;
+  if(!evId){ toast('Select an open event first','err'); return; }
+
+  try {
+    const res = await fetch('/api/scan/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        student_uid: uid,
+        event_id: parseInt(evId),
+        officer: state.officerName || 'Officer J. Reyes'
+      })
+    });
+    const data = await res.json();
+    const s = studentByUid(uid) || { name: uid, uid: uid };
+
+    if (res.status === 201) {
+      state.attendance.push({
+        id: data.attendance_id,
+        studentUid: uid,
+        eventId: parseInt(evId),
+        timestamp: data.timestamp,
+        officer: data.officer
+      });
+      state.lastScan = { status: 'present', student: s };
+      state.recentScans.unshift({ name: data.student_name || s.name, status: 'present' });
+      beep('ok');
+    } else if (res.status === 409) {
+      state.lastScan = { status: 'dup', student: s };
+      state.recentScans.unshift({ name: s.name, status: 'dup' });
       beep('dup');
     } else {
-      const record = {id:'AT-'+Math.random().toString(36).slice(2,9), studentUid:uid, eventId:ev.id, timestamp:new Date().toISOString(), officer: state.officerName};
-      state.attendance.push(record);
-      state.lastScan = {status:'present', student:s};
-      state.recentScans.unshift({name:s.name, status:'present'});
-      beep('ok');
-      persist();
+      state.lastScan = { status: 'invalid', raw: uid };
+      state.recentScans.unshift({ name: uid || '(empty)', status: 'invalid' });
+      beep('bad');
     }
+  } catch(e) {
+    console.error('Scan API error', e);
   }
-  renderPage();
+
+  updateScanUI();
 }
 
 function startScanner(){
   if(html5QrInstance || typeof Html5Qrcode==='undefined') return;
+  const qrRegion = document.getElementById('qr-reader');
+  if(!qrRegion) return;
+
   html5QrInstance = new Html5Qrcode('qr-reader');
-  html5QrInstance.start(
-    { facingMode:'environment' },
-    { fps:10, qrbox:220 },
-    (decodedText)=> handleScan(decodedText),
-    ()=>{}
-  ).then(()=>{ state.scannerActive = true; }).catch(()=>{
-    toast('Camera unavailable — use manual UID entry','err');
-    html5QrInstance = null; state.scannerActive = false;
-  });
+  const config = { fps: 10, qrbox: { width: 220, height: 220 } };
+  const onScanSuccess = (decodedText) => handleScan(decodedText);
+  const onScanError = () => {};
+
+  Html5Qrcode.getCameras().then(devices => {
+    if (devices && devices.length) {
+      const cameraId = devices[0].id;
+      html5QrInstance.start(cameraId, config, onScanSuccess, onScanError)
+        .then(() => { state.scannerActive = true; })
+        .catch(() => startWithFacingMode());
+    } else {
+      startWithFacingMode();
+    }
+  }).catch(() => startWithFacingMode());
+
+  function startWithFacingMode() {
+    html5QrInstance.start({ facingMode: 'user' }, config, onScanSuccess, onScanError)
+      .then(() => { state.scannerActive = true; })
+      .catch(() => {
+        html5QrInstance.start({ facingMode: 'environment' }, config, onScanSuccess, onScanError)
+          .then(() => { state.scannerActive = true; })
+          .catch(() => {
+            toast('Camera unavailable — use manual UID entry', 'err');
+            html5QrInstance = null;
+            state.scannerActive = false;
+          });
+      });
+  }
 }
 function stopScanner(){
   if(html5QrInstance){
@@ -637,7 +754,6 @@ function renderStatistics(){
   let studentsScope = activeStudents();
   if(f.year) studentsScope = studentsScope.filter(s=>s.year===f.year);
 
-  const byCourse = COURSES.map(c=>({label:c.replace('BS ',''), value: activeStudents().filter(s=>s.course===c).length}));
   const byEventPct = state.events.map(e=>{
     const p = attendanceForEvent(e.id).length; const total = activeStudents().length || 1;
     return {label: e.name, value: Math.round((p/total)*100)};
@@ -661,9 +777,9 @@ function renderStatistics(){
     </div>
   </div>
 
-  <div class="grid-2">
-    <div class="panel"><div class="panel-head"><h3>Students per Course</h3></div>${svgHBar(byCourse)}</div>
-    <div class="panel"><div class="panel-head"><h3>Attendance % per Event</h3></div>${svgHBar(byEventPct.map(x=>({label:x.label,value:x.value})))}</div>
+  <div class="panel">
+    <div class="panel-head"><h3>Attendance % per Event</h3></div>
+    ${svgHBar(byEventPct.map(x=>({label:x.label,value:x.value})), true)}
   </div>
 
   <div class="panel">
@@ -775,19 +891,34 @@ function studentModal(uid){
     </div>
   `);
   document.getElementById('cancelModal').onclick = closeModal;
-  document.getElementById('saveStudent').onclick = ()=>{
+  document.getElementById('saveStudent').onclick = async ()=>{
     const name = document.getElementById('f_name').value.trim();
     if(!name){ toast('Name is required','err'); return; }
-    const data = {
-      studentNumber: document.getElementById('f_num').value.trim() || 'N/A',
+    const payload = {
+      student_number: document.getElementById('f_num').value.trim() || 'N/A',
       name, course: document.getElementById('f_course').value,
       year: document.getElementById('f_year').value,
       section: document.getElementById('f_section').value,
       status: document.getElementById('f_status').value,
     };
-    if(isEdit){ Object.assign(s, data); toast('Student updated','ok'); }
-    else{ state.students.push({uid:newUid(), ...data}); toast('Student added','ok'); }
-    persist(); closeModal(); renderPage();
+    if(isEdit){
+      const res = await fetch(`/api/students/${s.uid}/`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      if(res.ok) toast('Student updated','ok');
+    }else{
+      payload.uid = newUid();
+      const res = await fetch('/api/students/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      if(res.ok) toast('Student added','ok');
+    }
+    closeModal();
+    await loadData();
   };
 }
 function eventModal(id){
@@ -808,14 +939,29 @@ function eventModal(id){
     </div>
   `);
   document.getElementById('cancelModal').onclick = closeModal;
-  document.getElementById('saveEvent').onclick = ()=>{
+  document.getElementById('saveEvent').onclick = async ()=>{
     const name = document.getElementById('e_name').value.trim();
     if(!name){ toast('Event name is required','err'); return; }
-    const data = { name, date: document.getElementById('e_date').value, time: document.getElementById('e_time').value,
-      venue: document.getElementById('e_venue').value.trim(), description: document.getElementById('e_desc').value.trim() };
-    if(isEdit){ Object.assign(e, data); toast('Event updated','ok'); }
-    else{ state.events.push({id:'EV-'+Date.now().toString().slice(-6), status:'Open', ...data}); toast('Event created','ok'); }
-    persist(); closeModal(); renderPage();
+    const payload = { name, date: document.getElementById('e_date').value, time: document.getElementById('e_time').value,
+      venue: document.getElementById('e_venue').value.trim(), description: document.getElementById('e_desc').value.trim(),
+      status: isEdit ? e.status : 'Open' };
+    if(isEdit){
+      const res = await fetch(`/api/events/${e.id}/`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      if(res.ok) toast('Event updated','ok');
+    }else{
+      const res = await fetch('/api/events/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      if(res.ok) toast('Event created','ok');
+    }
+    closeModal();
+    await loadData();
   };
 }
 function confirmModal(title, msg, onYes){
@@ -879,8 +1025,8 @@ function afterRender(page){
     const single = document.getElementById('qrSingle');
     const s = studentByUid(state.qrUid);
     if(s){
-      single.innerHTML = badgeCard(s);
-      renderQrInto(s, 'qrimg-'+s.uid.replace(/[^a-zA-Z0-9]/g,''));
+      single.innerHTML = badgeCard(s, 'single-qrimg-');
+      renderQrInto(s, 'single-qrimg-'+s.uid.replace(/[^a-zA-Z0-9]/g,''));
     }
     document.getElementById('qrSearch').oninput = (e)=>{
       const q = e.target.value.toLowerCase();
@@ -888,11 +1034,11 @@ function afterRender(page){
       if(found){ state.qrUid = found.uid; renderPage(); }
     };
     const bulk = document.getElementById('bulkBadges');
-    bulk.innerHTML = activeStudents().map(st=>badgeCard(st)).join('');
-    activeStudents().forEach(st=> renderQrInto(st, 'qrimg-'+st.uid.replace(/[^a-zA-Z0-9]/g,'')));
+    bulk.innerHTML = activeStudents().map(st=>badgeCard(st, 'bulk-qrimg-')).join('');
+    activeStudents().forEach(st=> renderQrInto(st, 'bulk-qrimg-'+st.uid.replace(/[^a-zA-Z0-9]/g,'')));
     document.querySelectorAll('[data-dl]').forEach(btn=>{
       btn.onclick = ()=>{
-        const canvas = document.getElementById(btn.dataset.dl).querySelector('canvas');
+        const canvas = document.getElementById(btn.dataset.dl)?.querySelector('canvas');
         if(canvas){ const a=document.createElement('a'); a.download=btn.dataset.uid+'.png'; a.href=canvas.toDataURL(); a.click(); }
       };
     });
@@ -913,12 +1059,21 @@ function afterRender(page){
     const addStudentBtn = document.getElementById('addStudentBtn');
     if(addStudentBtn) addStudentBtn.onclick = ()=> studentModal(null);
     document.querySelectorAll('[data-edit-student]').forEach(b=> b.onclick = ()=> studentModal(b.dataset.editStudent));
-    document.querySelectorAll('[data-toggle-student]').forEach(b=> b.onclick = ()=>{
-      const s = studentByUid(b.dataset.toggleStudent); s.status = s.status==='Active'?'Inactive':'Active'; persist(); renderPage();
+    document.querySelectorAll('[data-toggle-student]').forEach(b=> b.onclick = async ()=>{
+      const s = studentByUid(b.dataset.toggleStudent);
+      if(!s) return;
+      const newStatus = s.status === 'Active' ? 'Inactive' : 'Active';
+      await fetch(`/api/students/${s.uid}/`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ status: newStatus })
+      });
+      await loadData();
     });
     document.querySelectorAll('[data-del-student]').forEach(b=> b.onclick = ()=>{
-      confirmModal('Delete student?', 'This removes the student record permanently. Attendance history will remain but show as an unlinked UID.', ()=>{
-        state.students = state.students.filter(s=>s.uid!==b.dataset.delStudent); persist(); renderPage();
+      confirmModal('Delete student?', 'This removes the student record permanently.', async ()=>{
+        await fetch(`/api/students/${b.dataset.delStudent}/`, { method: 'DELETE' });
+        await loadData();
       });
     });
     document.getElementById('exportStudentsBtn').onclick = ()=>{
@@ -929,19 +1084,24 @@ function afterRender(page){
     if(importCsv) importCsv.onchange = (e)=>{
       const file = e.target.files[0]; if(!file) return;
       const reader = new FileReader();
-      reader.onload = ()=>{
+      reader.onload = async ()=>{
         try{
           const rows = parseCSV(reader.result);
           let count=0;
-          rows.forEach(r=>{
-            if(!r.name) return;
-            state.students.push({
-              uid:newUid(), studentNumber:r.studentNumber||r.studentnumber||'N/A', name:r.name,
-              course:r.course||COURSES[0], year:r.year||YEARS[0], section:r.section||'A', status:'Active'
+          for (const r of rows) {
+            if(!r.name) continue;
+            await fetch('/api/students/', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({
+                uid: newUid(), student_number: r.studentNumber||r.studentnumber||'N/A', name: r.name,
+                course: r.course||COURSES[0], year: r.year||YEARS[0], section: r.section||'A', status: 'Active'
+              })
             });
             count++;
-          });
-          persist(); toast(count+' students imported','ok'); renderPage();
+          }
+          toast(count+' students imported','ok');
+          await loadData();
         }catch(err){ toast('Could not parse CSV file','err'); }
       };
       reader.readAsText(file);
@@ -951,14 +1111,21 @@ function afterRender(page){
   if(page==='events'){
     const addBtn = document.getElementById('addEventBtn'); if(addBtn) addBtn.onclick = ()=> eventModal(null);
     document.querySelectorAll('[data-edit-event]').forEach(b=> b.onclick = ()=> eventModal(b.dataset.editEvent));
-    document.querySelectorAll('[data-toggle-event]').forEach(b=> b.onclick = ()=>{
-      const e = eventById(b.dataset.toggleEvent); e.status = e.status==='Open'?'Closed':'Open'; persist(); renderPage();
+    document.querySelectorAll('[data-toggle-event]').forEach(b=> b.onclick = async ()=>{
+      const e = eventById(parseInt(b.dataset.toggleEvent));
+      if(!e) return;
+      const newStatus = e.status === 'Open' ? 'Closed' : 'Open';
+      await fetch(`/api/events/${e.id}/`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ status: newStatus })
+      });
+      await loadData();
     });
     document.querySelectorAll('[data-del-event]').forEach(b=> b.onclick = ()=>{
-      confirmModal('Delete event?', 'This removes the event and its attendance records permanently.', ()=>{
-        state.events = state.events.filter(e=>e.id!==b.dataset.delEvent);
-        state.attendance = state.attendance.filter(a=>a.eventId!==b.dataset.delEvent);
-        persist(); renderPage();
+      confirmModal('Delete event?', 'This removes the event and its attendance records permanently.', async ()=>{
+        await fetch(`/api/events/${b.dataset.delEvent}/`, { method: 'DELETE' });
+        await loadData();
       });
     });
   }
@@ -1000,8 +1167,8 @@ function afterRender(page){
   if(page==='my-qr'){
     const s = studentByUid(state.studentViewUid);
     if(s){
-      document.getElementById('myQrBadge').innerHTML = badgeCard(s).replace('badge-actions no-print','badge-actions no-print' );
-      renderQrInto(s, 'qrimg-'+s.uid.replace(/[^a-zA-Z0-9]/g,''));
+      document.getElementById('myQrBadge').innerHTML = badgeCard(s, 'my-qrimg-');
+      renderQrInto(s, 'my-qrimg-'+s.uid.replace(/[^a-zA-Z0-9]/g,''));
     }
     const pb = document.getElementById('printMyQrBtn'); if(pb) pb.onclick = ()=> window.print();
   }

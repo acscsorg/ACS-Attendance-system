@@ -27,7 +27,7 @@ class StudentModelTest(TestCase):
         with self.assertRaises(IntegrityError):
             Student.objects.create(
                 uid="ST-2026-0001", student_number="21-1002", name="Bea",
-                course="BSIT", year="1st Year", section="1"
+                course="BSCS", year="1st Year", section="1"
             )
 
 class EventModelTest(TestCase):
@@ -104,7 +104,7 @@ class StudentAPITestCase(TestCase):
             "uid": "ST-2026-0002",
             "student_number": "21-1002",
             "name": "Bea Reyes",
-            "course": "BS Information Technology",
+            "course": "BS Computer Science",
             "year": "1st Year",
             "section": "2",
             "status": "Active"
@@ -189,7 +189,7 @@ class AttendanceScanAPITestCase(TestCase):
         )
         self.inactive_student = Student.objects.create(
             uid="ST-2026-0099", student_number="21-1099", name="Oscar Castillo",
-            course="BSIT", year="4th Year", section="1", status="Inactive"
+            course="BSCS", year="4th Year", section="1", status="Inactive"
         )
         self.open_event = Event.objects.create(
             name="Org Week Kickoff", date=date(2026, 8, 15), time=time(10, 0),
