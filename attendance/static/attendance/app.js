@@ -432,8 +432,8 @@ function renderQrGenerator(){
   </div>
   `;
 }
-function badgeCard(s, size){
-  const idPart = 'qrimg-'+s.uid.replace(/[^a-zA-Z0-9]/g,'');
+function badgeCard(s, prefix = 'qrimg-'){
+  const idPart = prefix + s.uid.replace(/[^a-zA-Z0-9]/g,'');
   return `<div class="badge">
     <div class="badge-top">
       <div class="org">AttendQR · Campus ID</div>
@@ -1014,8 +1014,8 @@ function afterRender(page){
     const single = document.getElementById('qrSingle');
     const s = studentByUid(state.qrUid);
     if(s){
-      single.innerHTML = badgeCard(s);
-      renderQrInto(s, 'qrimg-'+s.uid.replace(/[^a-zA-Z0-9]/g,''));
+      single.innerHTML = badgeCard(s, 'single-qrimg-');
+      renderQrInto(s, 'single-qrimg-'+s.uid.replace(/[^a-zA-Z0-9]/g,''));
     }
     document.getElementById('qrSearch').oninput = (e)=>{
       const q = e.target.value.toLowerCase();
@@ -1023,11 +1023,11 @@ function afterRender(page){
       if(found){ state.qrUid = found.uid; renderPage(); }
     };
     const bulk = document.getElementById('bulkBadges');
-    bulk.innerHTML = activeStudents().map(st=>badgeCard(st)).join('');
-    activeStudents().forEach(st=> renderQrInto(st, 'qrimg-'+st.uid.replace(/[^a-zA-Z0-9]/g,'')));
+    bulk.innerHTML = activeStudents().map(st=>badgeCard(st, 'bulk-qrimg-')).join('');
+    activeStudents().forEach(st=> renderQrInto(st, 'bulk-qrimg-'+st.uid.replace(/[^a-zA-Z0-9]/g,'')));
     document.querySelectorAll('[data-dl]').forEach(btn=>{
       btn.onclick = ()=>{
-        const canvas = document.getElementById(btn.dataset.dl).querySelector('canvas');
+        const canvas = document.getElementById(btn.dataset.dl)?.querySelector('canvas');
         if(canvas){ const a=document.createElement('a'); a.download=btn.dataset.uid+'.png'; a.href=canvas.toDataURL(); a.click(); }
       };
     });
@@ -1156,8 +1156,8 @@ function afterRender(page){
   if(page==='my-qr'){
     const s = studentByUid(state.studentViewUid);
     if(s){
-      document.getElementById('myQrBadge').innerHTML = badgeCard(s).replace('badge-actions no-print','badge-actions no-print' );
-      renderQrInto(s, 'qrimg-'+s.uid.replace(/[^a-zA-Z0-9]/g,''));
+      document.getElementById('myQrBadge').innerHTML = badgeCard(s, 'my-qrimg-');
+      renderQrInto(s, 'my-qrimg-'+s.uid.replace(/[^a-zA-Z0-9]/g,''));
     }
     const pb = document.getElementById('printMyQrBtn'); if(pb) pb.onclick = ()=> window.print();
   }
