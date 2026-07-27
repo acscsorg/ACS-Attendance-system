@@ -31,7 +31,7 @@ let state = {
 let html5QrInstance = null;
 let scanCooldown = false;
 
-const COURSES = ['BS Computer Science','BS Information Technology'];
+const COURSES = ['BS Computer Science'];
 const YEARS = ['1st Year','2nd Year','3rd Year','4th Year'];
 const SECTIONS = ['1','2','3'];
 
@@ -754,7 +754,6 @@ function renderStatistics(){
   let studentsScope = activeStudents();
   if(f.year) studentsScope = studentsScope.filter(s=>s.year===f.year);
 
-  const byCourse = COURSES.map(c=>({label:c.replace('BS ',''), value: activeStudents().filter(s=>s.course===c).length}));
   const byEventPct = state.events.map(e=>{
     const p = attendanceForEvent(e.id).length; const total = activeStudents().length || 1;
     return {label: e.name, value: Math.round((p/total)*100)};
@@ -778,9 +777,9 @@ function renderStatistics(){
     </div>
   </div>
 
-  <div class="grid-2">
-    <div class="panel"><div class="panel-head"><h3>Students per Course</h3></div>${svgHBar(byCourse)}</div>
-    <div class="panel"><div class="panel-head"><h3>Attendance % per Event</h3></div>${svgHBar(byEventPct.map(x=>({label:x.label,value:x.value})), true)}</div>
+  <div class="panel">
+    <div class="panel-head"><h3>Attendance % per Event</h3></div>
+    ${svgHBar(byEventPct.map(x=>({label:x.label,value:x.value})), true)}
   </div>
 
   <div class="panel">
