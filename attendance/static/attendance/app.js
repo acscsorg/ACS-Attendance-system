@@ -558,6 +558,9 @@ function renderEvents(){
 }
 
 /* ============================= SCANNER ============================= */
+let lastScannedUid = null;
+let lastScannedTime = 0;
+
 function renderScanner(){
   const openEvents = state.events.filter(e=>e.status==='Open');
   if(!state.scannerEventId || !eventById(state.scannerEventId)) state.scannerEventId = openEvents[0]?.id || null;
@@ -565,7 +568,7 @@ function renderScanner(){
   let resClass='idle', resHtml = '<div style="font-size:34px;">📷</div><div class="s-meta">Scan a QR code or enter a UID to begin.</div>';
   if(res){
     if(res.status==='present'){ resClass='present'; resHtml = `<div class="big-status" style="color:var(--forest)">✓ PRESENT</div><div class="s-name">${esc(res.student.name)}</div><div class="s-meta">${esc(res.student.course)} · ${esc(res.student.year)}</div><div class="s-meta mono">${esc(res.student.uid)}</div>`; }
-    else if(res.status==='dup'){ resClass='dup'; resHtml = `<div class="big-status" style="color:var(--amber)">ALREADY SCANNED</div><div class="s-name">${esc(res.student.name)}</div><div class="s-meta">Recorded at ${fmtTime(res.prevTime)}</div>`; }
+    else if(res.status==='dup'){ resClass='dup'; resHtml = `<div class="big-status" style="color:var(--amber)">ALREADY SCANNED</div><div class="s-name">${esc(res.student.name)}</div><div class="s-meta">Recorded previously</div>`; }
     else { resClass='invalid'; resHtml = `<div class="big-status" style="color:var(--rust)">✕ INVALID QR CODE</div><div class="s-meta">"${esc(res.raw)}" does not match any student UID.</div>`; }
   }
   return `
@@ -594,21 +597,54 @@ function renderScanner(){
       <div class="scan-result ${resClass}">${resHtml}</div>
       <div class="panel" style="margin-top:14px;">
         <h3 style="font-size:14px;margin-bottom:8px;">Recent Scans This Session</h3>
-        ${state.recentScans.length ? state.recentScans.slice(0,6).map(r=>`
-          <div class="recent-scan-row">
-            <div>${esc(r.name)}</div>
-            <div class="pill ${r.status==='present'?'pill-green':r.status==='dup'?'pill-amber':'pill-rust'}">${r.status==='present'?'Present':r.status==='dup'?'Duplicate':'Invalid'}</div>
-          </div>`).join('') : '<div class="empty">No scans yet this session.</div>'}
+        <div id="recentScansContainer">
+          ${renderRecentScansRows()}
+        </div>
       </div>
     </div>
   </div>
   `;
 }
 
+function renderRecentScansRows(){
+  return state.recentScans.length ? state.recentScans.slice(0,6).map(r=>`
+    <div class="recent-scan-row">
+      <div>${esc(r.name)}</div>
+      <div class="pill ${r.status==='present'?'pill-green':r.status==='dup'?'pill-amber':'pill-rust'}">${r.status==='present'?'Present':r.status==='dup'?'Duplicate':'Invalid'}</div>
+    </div>`).join('') : '<div class="empty">No scans yet this session.</div>';
+}
+
+function updateScanUI(){
+  const scanResultEl = document.querySelector('.scan-result');
+  if(scanResultEl && state.lastScan){
+    const res = state.lastScan;
+    let resClass='idle', resHtml = '';
+    if(res.status==='present'){ resClass='present'; resHtml = `<div class="big-status" style="color:var(--forest)">✓ PRESENT</div><div class="s-name">${esc(res.student.name)}</div><div class="s-meta">${esc(res.student.course)} · ${esc(res.student.year)}</div><div class="s-meta mono">${esc(res.student.uid)}</div>`; }
+    else if(res.status==='dup'){ resClass='dup'; resHtml = `<div class="big-status" style="color:var(--amber)">ALREADY SCANNED</div><div class="s-name">${esc(res.student.name)}</div><div class="s-meta">Recorded previously</div>`; }
+    else { resClass='invalid'; resHtml = `<div class="big-status" style="color:var(--rust)">✕ INVALID QR CODE</div><div class="s-meta">"${esc(res.raw)}" does not match any student UID.</div>`; }
+    
+    scanResultEl.className = 'scan-result ' + resClass;
+    scanResultEl.innerHTML = resHtml;
+  }
+
+  const container = document.getElementById('recentScansContainer');
+  if(container){
+    container.innerHTML = renderRecentScansRows();
+  }
+}
+
 async function handleScan(rawUid){
-  if(scanCooldown) return;
-  scanCooldown = true; setTimeout(()=>scanCooldown=false, 1200);
   const uid = (rawUid||'').trim();
+  if (!uid) return;
+
+  const now = Date.now();
+  // Ignore duplicate scan triggers for the same QR code within 3 seconds
+  if (uid === lastScannedUid && (now - lastScannedTime) < 3000) {
+    return;
+  }
+  lastScannedUid = uid;
+  lastScannedTime = now;
+
   const evId = state.scannerEventId;
   if(!evId){ toast('Select an open event first','err'); return; }
 
@@ -648,21 +684,44 @@ async function handleScan(rawUid){
   } catch(e) {
     console.error('Scan API error', e);
   }
-  renderPage();
+
+  updateScanUI();
 }
 
 function startScanner(){
   if(html5QrInstance || typeof Html5Qrcode==='undefined') return;
+  const qrRegion = document.getElementById('qr-reader');
+  if(!qrRegion) return;
+
   html5QrInstance = new Html5Qrcode('qr-reader');
-  html5QrInstance.start(
-    { facingMode:'environment' },
-    { fps:10, qrbox:220 },
-    (decodedText)=> handleScan(decodedText),
-    ()=>{}
-  ).then(()=>{ state.scannerActive = true; }).catch(()=>{
-    toast('Camera unavailable — use manual UID entry','err');
-    html5QrInstance = null; state.scannerActive = false;
-  });
+  const config = { fps: 10, qrbox: { width: 220, height: 220 } };
+  const onScanSuccess = (decodedText) => handleScan(decodedText);
+  const onScanError = () => {};
+
+  Html5Qrcode.getCameras().then(devices => {
+    if (devices && devices.length) {
+      const cameraId = devices[0].id;
+      html5QrInstance.start(cameraId, config, onScanSuccess, onScanError)
+        .then(() => { state.scannerActive = true; })
+        .catch(() => startWithFacingMode());
+    } else {
+      startWithFacingMode();
+    }
+  }).catch(() => startWithFacingMode());
+
+  function startWithFacingMode() {
+    html5QrInstance.start({ facingMode: 'user' }, config, onScanSuccess, onScanError)
+      .then(() => { state.scannerActive = true; })
+      .catch(() => {
+        html5QrInstance.start({ facingMode: 'environment' }, config, onScanSuccess, onScanError)
+          .then(() => { state.scannerActive = true; })
+          .catch(() => {
+            toast('Camera unavailable — use manual UID entry', 'err');
+            html5QrInstance = null;
+            state.scannerActive = false;
+          });
+      });
+  }
 }
 function stopScanner(){
   if(html5QrInstance){
