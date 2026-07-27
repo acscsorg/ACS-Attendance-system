@@ -35,79 +35,108 @@ const COURSES = ['BS Computer Science','BS Information Technology'];
 const YEARS = ['1st Year','2nd Year','3rd Year','4th Year'];
 const SECTIONS = ['1','2','3'];
 
-/* ============================= PERSISTENCE ============================= */
+/* ============================= PERSISTENCE & API SYNC ============================= */
 async function loadData(){
   try{
-    let parsed = null;
-    if (window.storage && window.storage.get) {
-      const res = await window.storage.get('attendqr-data', true);
-      if (res && res.value) parsed = JSON.parse(res.value);
-    } else if (window.localStorage) {
-      const res = localStorage.getItem('attendqr-data');
-      if (res) parsed = JSON.parse(res);
+    const [studentsRes, eventsRes, attendanceRes, settingsRes] = await Promise.all([
+      fetch('/api/students/').then(r=>r.json()),
+      fetch('/api/events/').then(r=>r.json()),
+      fetch('/api/attendance/').then(r=>r.json()),
+      fetch('/api/settings/').then(r=>r.json()),
+    ]);
+    
+    state.students = (studentsRes || []).map(s => ({
+      id: s.id,
+      uid: s.uid,
+      studentNumber: s.student_number,
+      name: s.name,
+      course: s.course,
+      year: s.year,
+      section: s.section,
+      status: s.status
+    }));
+
+    state.events = (eventsRes || []).map(e => ({
+      id: e.id,
+      name: e.name,
+      date: e.date,
+      time: e.time,
+      venue: e.venue,
+      description: e.description,
+      status: e.status
+    }));
+
+    state.attendance = (attendanceRes || []).map(a => ({
+      id: a.id,
+      studentUid: a.student_uid,
+      eventId: a.event_id,
+      timestamp: a.timestamp,
+      officer: a.officer
+    }));
+
+    if (settingsRes && settingsRes.academic_year) {
+      state.settings = {
+        academicYear: settingsRes.academic_year,
+        semester: settingsRes.semester
+      };
     }
-    if (parsed) {
-      state.students = parsed.students || [];
-      state.events = parsed.events || [];
-      state.attendance = parsed.attendance || [];
-      state.settings = parsed.settings || state.settings;
-      state.officers = parsed.officers || state.officers;
-      if(!state.students.length) seed();
-    } else {
-      seed();
-      await persist();
+
+    if (!state.students.length && !state.events.length) {
+      await seedToBackend();
+      return loadData();
     }
   }catch(e){
-    seed();
-    await persist();
+    console.error('Error fetching data from Django API:', e);
   }
   state.ready = true;
   if(state.students.length) state.studentViewUid = state.students[0].uid;
   if(state.officers.length) state.officerName = state.officers[0];
   render();
 }
+
 async function persist(){
+  // Local persistence backup
   try{
     const dataStr = JSON.stringify({
       students: state.students, events: state.events, attendance: state.attendance,
       settings: state.settings, officers: state.officers
     });
-    if (window.storage && window.storage.set) {
-      await window.storage.set('attendqr-data', dataStr, true);
-    } else if (window.localStorage) {
-      localStorage.setItem('attendqr-data', dataStr);
-    }
-  }catch(e){ console.error('save failed', e); toast('Could not save data','err'); }
+    if (window.localStorage) localStorage.setItem('attendqr-data', dataStr);
+  }catch(e){}
 }
 
-function seed(){
+async function seedToBackend(){
   const names = ['Ana Dela Cruz','Miguel Santos','Bea Reyes','Carlo Mendoza','Diana Flores','Ethan Cruz','Fiona Garcia','Gabriel Torres','Hannah Ramos','Ivan Bautista','Jasmine Villanueva','Kyle Aquino','Liza Domingo','Marco Pascual','Nadia Rivera','Oscar Castillo','Paula Navarro','Quinn Salazar'];
-  state.students = names.map((n,i)=>({
-    uid: makeUid(i+1),
-    studentNumber: '21-'+String(1000+i),
+  const studentsToCreate = names.map((n,i)=>({
+    uid: 'ST-2026-'+String(i+1).padStart(4,'0'),
+    student_number: '21-'+String(1000+i),
     name: n,
     course: COURSES[i % COURSES.length],
     year: YEARS[i % YEARS.length],
     section: SECTIONS[i % SECTIONS.length],
     status: i===15 ? 'Inactive' : 'Active',
   }));
+
+  for (const s of studentsToCreate) {
+    await fetch('/api/students/', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(s) });
+  }
+
   const today = new Date();
   const fmt = (d)=> d.toISOString().slice(0,10);
   const past1 = new Date(today); past1.setDate(today.getDate()-21);
   const past2 = new Date(today); past2.setDate(today.getDate()-7);
   const upcoming = new Date(today); upcoming.setDate(today.getDate()+10);
-  state.events = [
-    {id:'EV-1001', name:'General Assembly', date: fmt(past1), time:'09:00', venue:'Main Auditorium', description:'Semestral general assembly for all members.', status:'Closed'},
-    {id:'EV-1002', name:'Leadership Workshop', date: fmt(past2), time:'13:00', venue:'Function Hall B', description:'Workshop on officer leadership skills.', status:'Closed'},
-    {id:'EV-1003', name:'Org Week Kickoff', date: fmt(today), time:'10:00', venue:'Covered Court', description:'Opening program for organization week.', status:'Open'},
-    {id:'EV-1004', name:'General Assembly Pt. 2', date: fmt(upcoming), time:'09:00', venue:'Main Auditorium', description:'Follow-up assembly to close the semester.', status:'Open'},
+
+  const eventsToCreate = [
+    {name:'General Assembly', date: fmt(past1), time:'09:00:00', venue:'Main Auditorium', description:'Semestral general assembly for all members.', status:'Closed'},
+    {name:'Leadership Workshop', date: fmt(past2), time:'13:00:00', venue:'Function Hall B', description:'Workshop on officer leadership skills.', status:'Closed'},
+    {name:'Org Week Kickoff', date: fmt(today), time:'10:00:00', venue:'Covered Court', description:'Opening program for organization week.', status:'Open'},
+    {name:'General Assembly Pt. 2', date: fmt(upcoming), time:'09:00:00', venue:'Main Auditorium', description:'Follow-up assembly to close the semester.', status:'Open'},
   ];
-  state.attendance = [];
-  state.students.forEach((s,i)=>{
-    if(s.status!=='Active') return;
-    if(i % 4 !== 0) state.attendance.push(mkAtt(s.uid,'EV-1001', past1, state.officers[i%3]));
-    if(i % 3 !== 0) state.attendance.push(mkAtt(s.uid,'EV-1002', past2, state.officers[i%3]));
-  });
+
+  for (const e of eventsToCreate) {
+    await fetch('/api/events/', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(e) });
+  }
 }
 function mkAtt(uid,eventId,dateObj,officer){
   const d = new Date(dateObj); d.setHours(9+Math.floor(Math.random()*3), Math.floor(Math.random()*59));
@@ -576,31 +605,48 @@ function renderScanner(){
   `;
 }
 
-function handleScan(rawUid){
+async function handleScan(rawUid){
   if(scanCooldown) return;
   scanCooldown = true; setTimeout(()=>scanCooldown=false, 1200);
   const uid = (rawUid||'').trim();
-  const ev = eventById(state.scannerEventId);
-  if(!ev){ toast('Select an open event first','err'); return; }
-  const s = studentByUid(uid);
-  if(!s){
-    state.lastScan = {status:'invalid', raw: uid};
-    state.recentScans.unshift({name: uid || '(empty)', status:'invalid'});
-    beep('bad');
-  } else {
-    const existing = state.attendance.find(a=>a.studentUid===uid && a.eventId===ev.id);
-    if(existing){
-      state.lastScan = {status:'dup', student:s, prevTime: existing.timestamp};
-      state.recentScans.unshift({name:s.name, status:'dup'});
+  const evId = state.scannerEventId;
+  if(!evId){ toast('Select an open event first','err'); return; }
+
+  try {
+    const res = await fetch('/api/scan/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        student_uid: uid,
+        event_id: parseInt(evId),
+        officer: state.officerName || 'Officer J. Reyes'
+      })
+    });
+    const data = await res.json();
+    const s = studentByUid(uid) || { name: uid, uid: uid };
+
+    if (res.status === 201) {
+      state.attendance.push({
+        id: data.attendance_id,
+        studentUid: uid,
+        eventId: parseInt(evId),
+        timestamp: data.timestamp,
+        officer: data.officer
+      });
+      state.lastScan = { status: 'present', student: s };
+      state.recentScans.unshift({ name: data.student_name || s.name, status: 'present' });
+      beep('ok');
+    } else if (res.status === 409) {
+      state.lastScan = { status: 'dup', student: s };
+      state.recentScans.unshift({ name: s.name, status: 'dup' });
       beep('dup');
     } else {
-      const record = {id:'AT-'+Math.random().toString(36).slice(2,9), studentUid:uid, eventId:ev.id, timestamp:new Date().toISOString(), officer: state.officerName};
-      state.attendance.push(record);
-      state.lastScan = {status:'present', student:s};
-      state.recentScans.unshift({name:s.name, status:'present'});
-      beep('ok');
-      persist();
+      state.lastScan = { status: 'invalid', raw: uid };
+      state.recentScans.unshift({ name: uid || '(empty)', status: 'invalid' });
+      beep('bad');
     }
+  } catch(e) {
+    console.error('Scan API error', e);
   }
   renderPage();
 }
@@ -775,19 +821,34 @@ function studentModal(uid){
     </div>
   `);
   document.getElementById('cancelModal').onclick = closeModal;
-  document.getElementById('saveStudent').onclick = ()=>{
+  document.getElementById('saveStudent').onclick = async ()=>{
     const name = document.getElementById('f_name').value.trim();
     if(!name){ toast('Name is required','err'); return; }
-    const data = {
-      studentNumber: document.getElementById('f_num').value.trim() || 'N/A',
+    const payload = {
+      student_number: document.getElementById('f_num').value.trim() || 'N/A',
       name, course: document.getElementById('f_course').value,
       year: document.getElementById('f_year').value,
       section: document.getElementById('f_section').value,
       status: document.getElementById('f_status').value,
     };
-    if(isEdit){ Object.assign(s, data); toast('Student updated','ok'); }
-    else{ state.students.push({uid:newUid(), ...data}); toast('Student added','ok'); }
-    persist(); closeModal(); renderPage();
+    if(isEdit){
+      const res = await fetch(`/api/students/${s.uid}/`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      if(res.ok) toast('Student updated','ok');
+    }else{
+      payload.uid = newUid();
+      const res = await fetch('/api/students/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      if(res.ok) toast('Student added','ok');
+    }
+    closeModal();
+    await loadData();
   };
 }
 function eventModal(id){
@@ -808,14 +869,29 @@ function eventModal(id){
     </div>
   `);
   document.getElementById('cancelModal').onclick = closeModal;
-  document.getElementById('saveEvent').onclick = ()=>{
+  document.getElementById('saveEvent').onclick = async ()=>{
     const name = document.getElementById('e_name').value.trim();
     if(!name){ toast('Event name is required','err'); return; }
-    const data = { name, date: document.getElementById('e_date').value, time: document.getElementById('e_time').value,
-      venue: document.getElementById('e_venue').value.trim(), description: document.getElementById('e_desc').value.trim() };
-    if(isEdit){ Object.assign(e, data); toast('Event updated','ok'); }
-    else{ state.events.push({id:'EV-'+Date.now().toString().slice(-6), status:'Open', ...data}); toast('Event created','ok'); }
-    persist(); closeModal(); renderPage();
+    const payload = { name, date: document.getElementById('e_date').value, time: document.getElementById('e_time').value,
+      venue: document.getElementById('e_venue').value.trim(), description: document.getElementById('e_desc').value.trim(),
+      status: isEdit ? e.status : 'Open' };
+    if(isEdit){
+      const res = await fetch(`/api/events/${e.id}/`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      if(res.ok) toast('Event updated','ok');
+    }else{
+      const res = await fetch('/api/events/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      if(res.ok) toast('Event created','ok');
+    }
+    closeModal();
+    await loadData();
   };
 }
 function confirmModal(title, msg, onYes){
@@ -913,12 +989,21 @@ function afterRender(page){
     const addStudentBtn = document.getElementById('addStudentBtn');
     if(addStudentBtn) addStudentBtn.onclick = ()=> studentModal(null);
     document.querySelectorAll('[data-edit-student]').forEach(b=> b.onclick = ()=> studentModal(b.dataset.editStudent));
-    document.querySelectorAll('[data-toggle-student]').forEach(b=> b.onclick = ()=>{
-      const s = studentByUid(b.dataset.toggleStudent); s.status = s.status==='Active'?'Inactive':'Active'; persist(); renderPage();
+    document.querySelectorAll('[data-toggle-student]').forEach(b=> b.onclick = async ()=>{
+      const s = studentByUid(b.dataset.toggleStudent);
+      if(!s) return;
+      const newStatus = s.status === 'Active' ? 'Inactive' : 'Active';
+      await fetch(`/api/students/${s.uid}/`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ status: newStatus })
+      });
+      await loadData();
     });
     document.querySelectorAll('[data-del-student]').forEach(b=> b.onclick = ()=>{
-      confirmModal('Delete student?', 'This removes the student record permanently. Attendance history will remain but show as an unlinked UID.', ()=>{
-        state.students = state.students.filter(s=>s.uid!==b.dataset.delStudent); persist(); renderPage();
+      confirmModal('Delete student?', 'This removes the student record permanently.', async ()=>{
+        await fetch(`/api/students/${b.dataset.delStudent}/`, { method: 'DELETE' });
+        await loadData();
       });
     });
     document.getElementById('exportStudentsBtn').onclick = ()=>{
@@ -929,19 +1014,24 @@ function afterRender(page){
     if(importCsv) importCsv.onchange = (e)=>{
       const file = e.target.files[0]; if(!file) return;
       const reader = new FileReader();
-      reader.onload = ()=>{
+      reader.onload = async ()=>{
         try{
           const rows = parseCSV(reader.result);
           let count=0;
-          rows.forEach(r=>{
-            if(!r.name) return;
-            state.students.push({
-              uid:newUid(), studentNumber:r.studentNumber||r.studentnumber||'N/A', name:r.name,
-              course:r.course||COURSES[0], year:r.year||YEARS[0], section:r.section||'A', status:'Active'
+          for (const r of rows) {
+            if(!r.name) continue;
+            await fetch('/api/students/', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({
+                uid: newUid(), student_number: r.studentNumber||r.studentnumber||'N/A', name: r.name,
+                course: r.course||COURSES[0], year: r.year||YEARS[0], section: r.section||'A', status: 'Active'
+              })
             });
             count++;
-          });
-          persist(); toast(count+' students imported','ok'); renderPage();
+          }
+          toast(count+' students imported','ok');
+          await loadData();
         }catch(err){ toast('Could not parse CSV file','err'); }
       };
       reader.readAsText(file);
@@ -951,14 +1041,21 @@ function afterRender(page){
   if(page==='events'){
     const addBtn = document.getElementById('addEventBtn'); if(addBtn) addBtn.onclick = ()=> eventModal(null);
     document.querySelectorAll('[data-edit-event]').forEach(b=> b.onclick = ()=> eventModal(b.dataset.editEvent));
-    document.querySelectorAll('[data-toggle-event]').forEach(b=> b.onclick = ()=>{
-      const e = eventById(b.dataset.toggleEvent); e.status = e.status==='Open'?'Closed':'Open'; persist(); renderPage();
+    document.querySelectorAll('[data-toggle-event]').forEach(b=> b.onclick = async ()=>{
+      const e = eventById(parseInt(b.dataset.toggleEvent));
+      if(!e) return;
+      const newStatus = e.status === 'Open' ? 'Closed' : 'Open';
+      await fetch(`/api/events/${e.id}/`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ status: newStatus })
+      });
+      await loadData();
     });
     document.querySelectorAll('[data-del-event]').forEach(b=> b.onclick = ()=>{
-      confirmModal('Delete event?', 'This removes the event and its attendance records permanently.', ()=>{
-        state.events = state.events.filter(e=>e.id!==b.dataset.delEvent);
-        state.attendance = state.attendance.filter(a=>a.eventId!==b.dataset.delEvent);
-        persist(); renderPage();
+      confirmModal('Delete event?', 'This removes the event and its attendance records permanently.', async ()=>{
+        await fetch(`/api/events/${b.dataset.delEvent}/`, { method: 'DELETE' });
+        await loadData();
       });
     });
   }
