@@ -163,8 +163,8 @@ function fmtTime(d){ return new Date(d).toLocaleTimeString('en-US',{hour:'numeri
 function esc(s){ return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function activeStudents(){ return state.students.filter(s=>s.status==='Active'); }
 function studentByUid(uid){ return state.students.find(s=>s.uid===uid); }
-function eventById(id){ return state.events.find(e=>e.id===id); }
-function attendanceForEvent(id){ return state.attendance.filter(a=>a.eventId===id); }
+function eventById(id){ return state.events.find(e=>String(e.id)===String(id)); }
+function attendanceForEvent(id){ return state.attendance.filter(a=>String(a.eventId)===String(id)); }
 function attendanceForStudent(uid){ return state.attendance.filter(a=>a.studentUid===uid); }
 function studentAttendancePct(uid){
   const total = state.events.length || 1;
@@ -333,7 +333,7 @@ function renderDashboard(){
       <div class="panel-head">
         <h3>Event Snapshot</h3>
         <select class="select" id="dashEventSelect">
-          ${focusEvents.map(e=>`<option value="${e.id}" ${e.id===state.dashEventId?'selected':''}>${esc(e.name)}</option>`).join('')}
+          ${focusEvents.map(e=>`<option value="${e.id}" ${String(e.id)===String(state.dashEventId)?'selected':''}>${esc(e.name)}</option>`).join('')}
         </select>
       </div>
       <div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;">
