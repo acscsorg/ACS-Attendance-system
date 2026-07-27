@@ -178,3 +178,96 @@ class EventAPITestCase(TestCase):
         response = self.client.delete(f'/api/events/{self.event.pk}/')
         self.assertEqual(response.status_code, 204)
         self.assertFalse(Event.objects.filter(pk=self.event.pk).exists())
+
+
+class AttendanceScanAPITestCase(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.active_student = Student.objects.create(
+            uid="ST-2026-0001", student_number="21-1001", name="Ana Dela Cruz",
+            course="BSCS", year="1st Year", section="1", status="Active"
+        )
+        self.inactive_student = Student.objects.create(
+            uid="ST-2026-0099", student_number="21-1099", name="Oscar Castillo",
+            course="BSIT", year="4th Year", section="1", status="Inactive"
+        )
+        self.open_event = Event.objects.create(
+            name="Org Week Kickoff", date=date(2026, 8, 15), time=time(10, 0),
+            venue="Covered Court", status="Open"
+        )
+        self.closed_event = Event.objects.create(
+            name="Leadership Workshop", date=date(2026, 8, 1), time=time(13, 0),
+            venue="Function Hall B", status="Closed"
+        )
+
+    def test_successful_scan_api(self):
+        payload = {
+            "student_uid": "ST-2026-0001",
+            "event_id": self.open_event.id,
+            "officer": "Officer J. Reyes"
+        }
+        response = self.client.post('/api/scan/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 201)
+        data = response.json()
+        self.assertEqual(data['status'], "success")
+        self.assertEqual(data['student_name'], "Ana Dela Cruz")
+        self.assertTrue(Attendance.objects.filter(student=self.active_student, event=self.open_event).exists())
+
+    def test_scan_student_not_found_api(self):
+        payload = {
+            "student_uid": "ST-9999-9999",
+            "event_id": self.open_event.id,
+            "officer": "Officer J. Reyes"
+        }
+        response = self.client.post('/api/scan/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 404)
+        data = response.json()
+        self.assertEqual(data['status'], "error")
+
+    def test_scan_inactive_student_api(self):
+        payload = {
+            "student_uid": "ST-2026-0099",
+            "event_id": self.open_event.id,
+            "officer": "Officer J. Reyes"
+        }
+        response = self.client.post('/api/scan/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 400)
+        data = response.json()
+        self.assertEqual(data['status'], "error")
+        self.assertIn("inactive", data['message'].lower())
+
+    def test_scan_closed_event_api(self):
+        payload = {
+            "student_uid": "ST-2026-0001",
+            "event_id": self.closed_event.id,
+            "officer": "Officer J. Reyes"
+        }
+        response = self.client.post('/api/scan/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 400)
+        data = response.json()
+        self.assertEqual(data['status'], "error")
+        self.assertIn("closed", data['message'].lower())
+
+    def test_duplicate_scan_api(self):
+        # First scan
+        Attendance.objects.create(student=self.active_student, event=self.open_event, officer="Officer J. Reyes")
+        
+        # Second scan attempt
+        payload = {
+            "student_uid": "ST-2026-0001",
+            "event_id": self.open_event.id,
+            "officer": "Officer M. Santos"
+        }
+        response = self.client.post('/api/scan/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 409)
+        data = response.json()
+        self.assertEqual(data['status'], "duplicate")
+
+    def test_list_attendance_api(self):
+        Attendance.objects.create(student=self.active_student, event=self.open_event, officer="Officer J. Reyes")
+        response = self.client.get('/api/attendance/')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIsInstance(data, list)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]['student_uid'], "ST-2026-0001")

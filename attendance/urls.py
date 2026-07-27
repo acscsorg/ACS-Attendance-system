@@ -7,4 +7,6 @@ urlpatterns = [
     path('api/students/<str:uid>/', views.student_detail, name='student_detail'),
     path('api/events/', views.event_list_create, name='event_list_create'),
     path('api/events/<int:pk>/', views.event_detail, name='event_detail'),
+    path('api/scan/', views.scan_qr, name='scan_qr'),
+    path('api/attendance/', views.attendance_list, name='attendance_list'),
 ]

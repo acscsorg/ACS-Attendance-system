@@ -146,3 +146,77 @@ def event_detail(request, pk):
     elif request.method == 'DELETE':
         event.delete()
         return HttpResponse(status=204)
+
+
+@csrf_exempt
+def scan_qr(request):
+    if request.method == 'POST':
+        data = json.loads(request.body)
+        student_uid = data.get('student_uid')
+        event_id = data.get('event_id')
+        officer = data.get('officer', '')
+
+        # 1. Student check
+        try:
+            student = Student.objects.get(uid=student_uid)
+        except Student.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': 'Student not found'}, status=404)
+
+        if student.status != 'Active':
+            return JsonResponse({'status': 'error', 'message': 'Student account is inactive'}, status=400)
+
+        # 2. Event check
+        try:
+            event = Event.objects.get(pk=event_id)
+        except Event.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': 'Event not found'}, status=404)
+
+        if event.status != 'Open':
+            return JsonResponse({'status': 'error', 'message': 'Event is closed for attendance'}, status=400)
+
+        # 3. Duplicate check
+        if Attendance.objects.filter(student=student, event=event).exists():
+            return JsonResponse({'status': 'duplicate', 'message': 'Attendance already recorded for this event'}, status=409)
+
+        # 4. Create record
+        record = Attendance.objects.create(
+            student=student,
+            event=event,
+            officer=officer
+        )
+
+        return JsonResponse({
+            'status': 'success',
+            'message': 'Attendance recorded',
+            'attendance_id': record.id,
+            'student_name': student.name,
+            'student_uid': student.uid,
+            'event_name': event.name,
+            'timestamp': record.timestamp.isoformat(),
+            'officer': record.officer
+        }, status=201)
+
+
+@csrf_exempt
+def attendance_list(request):
+    if request.method == 'GET':
+        records = Attendance.objects.select_related('student', 'event').all()
+
+        event_id = request.GET.get('event_id')
+        student_uid = request.GET.get('student_uid')
+        if event_id:
+            records = records.filter(event_id=event_id)
+        if student_uid:
+            records = records.filter(student__uid=student_uid)
+
+        data = [{
+            'id': r.id,
+            'student_uid': r.student.uid,
+            'student_name': r.student.name,
+            'event_id': r.event.id,
+            'event_name': r.event.name,
+            'timestamp': r.timestamp.isoformat(),
+            'officer': r.officer
+        } for r in records]
+
+        return JsonResponse(data, safe=False)
