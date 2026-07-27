@@ -382,15 +382,27 @@ function svgDonut(present,total){
     <text x="60" y="65" text-anchor="middle" font-family="Space Grotesk" font-size="22" font-weight="700" fill="#151E33">${Math.round(pct*100)}%</text>
   </svg>`;
 }
-function svgHBar(data){
-  const max = Math.max(1,...data.map(d=>d.value));
-  const rowH=28, width=420, height=data.length*rowH+6;
-  return `<svg width="100%" viewBox="0 0 ${width} ${height}" style="max-width:420px">
-    ${data.map((d,i)=>{
-      const y=i*rowH; const w = Math.max(3,(d.value/max)*260);
-      return `<text x="0" y="${y+17}" font-size="12" fill="#151E33" font-family="Inter">${esc(d.label)}</text>
-      <rect x="76" y="${y+5}" width="${w}" height="14" rx="4" fill="#C89B3C"/>
-      <text x="${76+w+8}" y="${y+16}" font-size="12" fill="#5B6478">${d.value}</text>`;
+function svgHBar(data, isPercent = false){
+  if (!data || !data.length) return '<div class="empty">No data available.</div>';
+  const max = Math.max(1, ...data.map(d=>d.value));
+  const labelWidth = 150;
+  const maxBarW = 200;
+  const totalWidth = labelWidth + maxBarW + 70;
+  const rowH = 32;
+  const height = data.length * rowH + 8;
+
+  return `<svg width="100%" viewBox="0 0 ${totalWidth} ${height}" style="max-width:100%;">
+    ${data.map((d, i) => {
+      const y = i * rowH;
+      const w = Math.max(4, (d.value / max) * maxBarW);
+      const displayLabel = d.label.length > 20 ? d.label.slice(0, 18) + '…' : d.label;
+      const valStr = isPercent ? d.value + '%' : d.value;
+      return `<g>
+        <title>${esc(d.label)}: ${valStr}</title>
+        <text x="0" y="${y + 19}" font-size="12" fill="#151E33" font-family="Inter">${esc(displayLabel)}</text>
+        <rect x="${labelWidth}" y="${y + 6}" width="${w}" height="16" rx="4" fill="#C89B3C"/>
+        <text x="${labelWidth + w + 8}" y="${y + 18}" font-size="12" font-weight="600" fill="#5B6478">${valStr}</text>
+      </g>`;
     }).join('')}
   </svg>`;
 }
@@ -768,7 +780,7 @@ function renderStatistics(){
 
   <div class="grid-2">
     <div class="panel"><div class="panel-head"><h3>Students per Course</h3></div>${svgHBar(byCourse)}</div>
-    <div class="panel"><div class="panel-head"><h3>Attendance % per Event</h3></div>${svgHBar(byEventPct.map(x=>({label:x.label,value:x.value})))}</div>
+    <div class="panel"><div class="panel-head"><h3>Attendance % per Event</h3></div>${svgHBar(byEventPct.map(x=>({label:x.label,value:x.value})), true)}</div>
   </div>
 
   <div class="panel">
