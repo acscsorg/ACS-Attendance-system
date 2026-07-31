@@ -34,6 +34,7 @@ let state = {
   scannerActive: false,
   lastScan: null,
   recentScans: [],
+  stuPage: 1,
 };
 let html5QrInstance = null;
 let scanCooldown = false;
@@ -772,6 +773,9 @@ function renderStudents() {
   const canEdit = state.role === "admin";
   state.stuSearch = state.stuSearch || "";
   state.stuSort = state.stuSort || { key: "name", dir: 1 };
+  state.stuPage = state.stuPage || 1;
+  const perPage = 10;
+
   let list = state.students.filter((s) => {
     const q = state.stuSearch.toLowerCase();
     return (
@@ -790,6 +794,14 @@ function renderStudents() {
     const d = state.stuSort.dir;
     return String(a[k]).localeCompare(String(b[k])) * d;
   });
+
+  const totalItems = list.length;
+  const totalPages = Math.ceil(totalItems / perPage) || 1;
+  if (state.stuPage > totalPages) state.stuPage = totalPages;
+  if (state.stuPage < 1) state.stuPage = 1;
+
+  const startIndex = (state.stuPage - 1) * perPage;
+  const paginatedList = list.slice(startIndex, startIndex + perPage);
 
   return `
   <div class="panel no-print">
@@ -816,8 +828,8 @@ function renderStudents() {
       </tr></thead>
       <tbody>
       ${
-        list.length
-          ? list
+        paginatedList.length
+          ? paginatedList
               .map(
                 (s) => `
         <tr>
@@ -845,6 +857,16 @@ function renderStudents() {
       }
       </tbody>
     </table>
+    </div>
+    <div class="pagination-bar" style="display:flex;align-items:center;justify-content:space-between;margin-top:14px;padding-top:10px;border-top:1px solid var(--line);flex-wrap:wrap;gap:10px;">
+      <div style="font-size:12.5px;color:var(--slate);">
+        Showing <b>${totalItems ? startIndex + 1 : 0}</b> to <b>${Math.min(startIndex + perPage, totalItems)}</b> of <b>${totalItems}</b> students
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button class="btn btn-sm" id="stuPrevPage" ${state.stuPage <= 1 ? "disabled" : ""}>← Previous</button>
+        <span style="font-size:12.5px;font-weight:600;padding:0 8px;">Page ${state.stuPage} of ${totalPages}</span>
+        <button class="btn btn-sm" id="stuNextPage" ${state.stuPage >= totalPages ? "disabled" : ""}>Next →</button>
+      </div>
     </div>
   </div>
   `;
@@ -1534,16 +1556,33 @@ function afterRender(page) {
   if (page === "students") {
     document.getElementById("stuSearchInput").oninput = (e) => {
       state.stuSearch = e.target.value;
+      state.stuPage = 1;
       renderPage();
     };
     document.getElementById("stuYearFilter").onchange = (e) => {
       state.stuYearFilter = e.target.value;
+      state.stuPage = 1;
       renderPage();
     };
     document.getElementById("stuStatusFilter").onchange = (e) => {
       state.stuStatusFilter = e.target.value;
+      state.stuPage = 1;
       renderPage();
     };
+    const prevBtn = document.getElementById("stuPrevPage");
+    if (prevBtn)
+      prevBtn.onclick = () => {
+        if (state.stuPage > 1) {
+          state.stuPage--;
+          renderPage();
+        }
+      };
+    const nextBtn = document.getElementById("stuNextPage");
+    if (nextBtn)
+      nextBtn.onclick = () => {
+        state.stuPage++;
+        renderPage();
+      };
     document.querySelectorAll("th[data-sort]").forEach((th) => {
       th.onclick = () => {
         const k = th.dataset.sort;
