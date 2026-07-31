@@ -302,3 +302,57 @@ class DashboardAndSettingsAPITestCase(TestCase):
         data2 = res2.json()
         self.assertEqual(data2['academic_year'], "2027-2028")
         self.assertEqual(data2['semester'], "Second Semester")
+
+
+class AuthAPITestCase(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.student = Student.objects.create(
+            uid="ST-2026-0001", student_number="21-1001", name="Ana Dela Cruz",
+            course="BS Computer Science", year="1st Year", section="1", status="Active"
+        )
+
+    def test_admin_login_success(self):
+        payload = {"role": "admin", "username": "admin", "password": "admin123"}
+        response = self.client.post('/api/login/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['role'], "admin")
+        self.assertTrue(data['success'])
+
+    def test_admin_login_wrong_password(self):
+        payload = {"role": "admin", "username": "admin", "password": "wrongpassword"}
+        response = self.client.post('/api/login/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 401)
+        data = response.json()
+        self.assertFalse(data['success'])
+
+    def test_officer_login_success(self):
+        payload = {"role": "officer", "username": "Officer J. Reyes", "pin": "1234"}
+        response = self.client.post('/api/login/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['role'], "officer")
+        self.assertEqual(data['name'], "Officer J. Reyes")
+
+    def test_student_login_by_uid(self):
+        payload = {"role": "student", "identifier": "ST-2026-0001"}
+        response = self.client.post('/api/login/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['role'], "student")
+        self.assertEqual(data['student']['uid'], "ST-2026-0001")
+
+    def test_student_login_by_student_number(self):
+        payload = {"role": "student", "identifier": "21-1001"}
+        response = self.client.post('/api/login/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['role'], "student")
+        self.assertEqual(data['student']['uid'], "ST-2026-0001")
+
+    def test_student_login_not_found(self):
+        payload = {"role": "student", "identifier": "ST-9999-9999"}
+        response = self.client.post('/api/login/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 404)
+

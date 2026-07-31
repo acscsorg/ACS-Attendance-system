@@ -10,8 +10,18 @@ The **ACS Attendance System** is the official digital attendance tracking platfo
 ## 🛠️ Tech Stack
 
 - **Backend:** Python / Django
-- **Database:** SQLite (development)
-- **Frontend:** HTML, CSS, JavaScript
+- **Database:** SQLite (Official Final Database)
+- **Environment & Dependency Manager:** Pipenv
+- **Frontend:** HTML5, CSS3, JavaScript (Vanilla ES6+)
+
+---
+
+## ⚠️ Important Database Note (SQLite)
+
+> [!IMPORTANT]
+> **Database File Notice:**  
+> **SQLite** is the designated final database for this system. Database files (`db.sqlite3`) are excluded from Git version control to ensure data security and privacy.  
+> **Every developer / contributor must generate their own local `db.sqlite3` database file in the project root directory by running `python manage.py migrate` (inside `pipenv shell`) during setup.**
 
 ---
 
@@ -22,7 +32,7 @@ The **ACS Attendance System** is the official digital attendance tracking platfo
 Make sure you have the following installed on your machine:
 
 - [Python 3.10+](https://www.python.org/downloads/)
-- pip (comes bundled with Python)
+- [Pipenv](https://pipenv.pypa.io/en/latest/) (`pip install pipenv` or `py -m pip install pipenv`)
 - Git
 
 ---
@@ -36,49 +46,27 @@ cd ACS-Attendance-system
 
 ---
 
-### 2. Create a Virtual Environment
+### 2. Install Dependencies & Activate Pipenv Shell
+
+Install required dependencies:
 
 ```bash
-python -m venv venv
+pipenv install
 ```
+
+Activate the Pipenv virtual environment shell:
+
+```bash
+pipenv shell
+```
+
+Once inside `pipenv shell`, your terminal is automatically environment-configured. You can run all `python` commands directly without prefixing `pipenv run`!
 
 ---
 
-### 3. Activate the Virtual Environment
+### 3. Initialize Your Local SQLite Database
 
-**PowerShell (recommended for Windows):**
-```powershell
-.\venv\Scripts\Activate.ps1
-```
-
-> If you get a script execution error, run this first (one-time fix):
-> ```powershell
-> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-> ```
-
-**Command Prompt (Windows):**
-```cmd
-.\venv\Scripts\activate.bat
-```
-
-**macOS / Linux:**
-```bash
-source venv/bin/activate
-```
-
-You'll know the venv is active when your terminal prompt shows `(venv)` at the beginning.
-
----
-
-### 4. Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
----
-
-### 5. Apply Database Migrations
+Generate your root `db.sqlite3` database file and apply all migrations:
 
 ```bash
 python manage.py migrate
@@ -86,7 +74,9 @@ python manage.py migrate
 
 ---
 
-### 6. Run the Development Server
+### 4. Run the Development Server
+
+Start the local Django server:
 
 ```bash
 python manage.py runserver
@@ -100,15 +90,25 @@ http://127.0.0.1:8000/
 
 ---
 
+## 🧪 Running Automated Tests
+
+Run the full backend TDD test suite to verify system integrity:
+
+```bash
+python manage.py test attendance
+```
+
+---
+
 ## 📁 Project Structure
 
 ```
 ACS-Attendance-system/
 ├── ACS_Attendance_System/   # Django project config (settings, urls, wsgi)
-├── attendance/              # Main Django app
-├── venv/                    # Virtual environment (not committed to Git)
+├── attendance/              # Main Django app (models, views, templates, static)
+├── Pipfile                  # Pipenv dependency specifications
+├── Pipfile.lock             # Exact dependency lockfile
 ├── manage.py
-├── requirements.txt
 └── README.md
 ```
 
@@ -116,11 +116,13 @@ ACS-Attendance-system/
 
 ## 🔄 Updating Dependencies
 
-If you install a new package, update `requirements.txt` by running:
+If you add a new package to the project:
 
 ```bash
-pip freeze > requirements.txt
+pipenv install <package_name>
 ```
+
+This will automatically update both `Pipfile` and `Pipfile.lock`.
 
 ---
 
