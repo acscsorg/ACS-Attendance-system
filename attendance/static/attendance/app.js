@@ -20,6 +20,10 @@ const ICONS = {
 
 /* ============================= STATE ============================= */
 let state = {
+  auth: (function() {
+    try { return JSON.parse(localStorage.getItem('attendqr-auth')); } catch(e){ return null; }
+  })(),
+  loginTab: 'student',
   role: "admin",
   page: "dashboard",
   officerName: null,
@@ -28,7 +32,7 @@ let state = {
   events: [],
   attendance: [],
   officers: ["Officer J. Reyes", "Officer M. Santos", "Officer A. Cruz"],
-  settings: { semester: "First Semester", academicYear: "2026-2027" },
+  settings: { semester: "First Semester", academicYear: "2026-2027", adminUsername: "admin" },
   ready: false,
   scannerEventId: null,
   scannerActive: false,
@@ -87,6 +91,7 @@ async function loadData() {
       state.settings = {
         academicYear: settingsRes.academic_year,
         semester: settingsRes.semester,
+        adminUsername: settingsRes.admin_username || 'admin',
       };
     }
 
@@ -452,6 +457,135 @@ const PAGE_TITLES = {
   "my-attendance": "My Attendance",
 };
 
+/* ============================= LOGIN PORTAL ============================= */
+function renderLogin() {
+  state.loginTab = state.loginTab || "student";
+  const activeTab = state.loginTab;
+
+  return `
+  <div class="login-wrapper">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="login-logo">ACS</div>
+        <h2>ACS Attendance</h2>
+        <div class="login-sub">Association of Computer Scientists Portal</div>
+      </div>
+
+      <div class="login-tabs">
+        <button type="button" class="login-tab ${activeTab === 'student' ? 'active' : ''}" data-login-tab="student">Student</button>
+        <button type="button" class="login-tab ${activeTab === 'officer' ? 'active' : ''}" data-login-tab="officer">Officer</button>
+        <button type="button" class="login-tab ${activeTab === 'admin' ? 'active' : ''}" data-login-tab="admin">Admin</button>
+      </div>
+
+      <form id="loginForm">
+        ${
+          activeTab === 'student'
+            ? `
+          <div class="field">
+            <label>Student UID or Student No.</label>
+            <input class="input" id="loginIdentifier" placeholder="e.g. ST-2026-0001 or 21-1000" autofocus required>
+          </div>
+          <div class="demo-hints">
+            <span style="font-size:11px;color:var(--slate);display:block;margin-bottom:4px;">Quick Demo Select:</span>
+            ${activeStudents().slice(0, 3).map(s => `<button type="button" class="demo-chip" data-quick-stu="${esc(s.uid)}">${esc(s.name)} (${esc(s.uid)})</button>`).join('')}
+          </div>
+          <button type="submit" class="btn btn-brass btn-block" style="margin-top:16px;">Log In as Student</button>
+        `
+            : activeTab === 'officer'
+            ? `
+          <div class="field">
+            <label>Select Officer Account</label>
+            <select class="select" id="loginOfficerName">
+              ${state.officers.map(o => `<option>${esc(o)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field">
+            <label>Officer PIN</label>
+            <input type="password" class="input" id="loginOfficerPin" placeholder="Default PIN: 1234" value="1234" required>
+          </div>
+          <button type="submit" class="btn btn-brass btn-block" style="margin-top:16px;">Log In as Officer</button>
+        `
+            : `
+          <div class="field">
+            <label>Admin Username</label>
+            <input class="input" id="loginAdminUser" placeholder="Enter username" value="${esc(state.settings.adminUsername || 'admin')}" required>
+          </div>
+          <div class="field">
+            <label>Admin Password</label>
+            <input type="password" class="input" id="loginAdminPass" placeholder="Enter password" value="admin123" required>
+          </div>
+          <button type="submit" class="btn btn-brass btn-block" style="margin-top:16px;">Log In as Admin</button>
+        `
+        }
+      </form>
+    </div>
+  </div>
+  `;
+}
+
+function afterRenderLogin() {
+  document.querySelectorAll("[data-login-tab]").forEach((btn) => {
+    btn.onclick = () => {
+      state.loginTab = btn.dataset.loginTab;
+      render();
+    };
+  });
+
+  document.querySelectorAll("[data-quick-stu]").forEach((chip) => {
+    chip.onclick = () => {
+      const inp = document.getElementById("loginIdentifier");
+      if (inp) inp.value = chip.dataset.quickStu;
+    };
+  });
+
+  const form = document.getElementById("loginForm");
+  if (!form) return;
+
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const tab = state.loginTab;
+    let payload = { role: tab };
+
+    if (tab === "student") {
+      const iden = document.getElementById("loginIdentifier").value.trim();
+      if (!iden) return;
+      payload.identifier = iden;
+    } else if (tab === "officer") {
+      payload.username = document.getElementById("loginOfficerName").value;
+      payload.pin = document.getElementById("loginOfficerPin").value.trim();
+    } else if (tab === "admin") {
+      payload.username = document.getElementById("loginAdminUser").value.trim();
+      payload.password = document.getElementById("loginAdminPass").value.trim();
+    }
+
+    try {
+      const res = await fetch("/api/login/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        state.auth = {
+          role: data.role,
+          name: data.name || (data.student ? data.student.name : "User"),
+          studentUid: data.student ? data.student.uid : null,
+        };
+        localStorage.setItem("attendqr-auth", JSON.stringify(state.auth));
+        state.role = data.role;
+        state.page = NAV[data.role][0].id;
+        toast(`Logged in successfully as ${state.auth.name}`, "ok");
+        render();
+      } else {
+        toast(data.message || "Login failed", "err");
+      }
+    } catch (err) {
+      toast("Connection error during login", "err");
+    }
+  };
+}
+
 /* ============================= RENDER ROOT ============================= */
 function render() {
   const app = document.getElementById("app");
@@ -460,7 +594,22 @@ function render() {
       '<div style="padding:40px;font-family:Inter">Loading AttendQR…</div>';
     return;
   }
-  const nav = NAV[state.role];
+
+  if (!state.auth) {
+    app.innerHTML = renderLogin();
+    afterRenderLogin();
+    return;
+  }
+
+  state.role = state.auth.role || "admin";
+  if (state.role === "officer" && state.auth.name) {
+    state.officerName = state.auth.name;
+  }
+  if (state.role === "student" && state.auth.studentUid) {
+    state.studentViewUid = state.auth.studentUid;
+  }
+
+  const nav = NAV[state.role] || NAV.admin;
   if (!nav.find((n) => n.id === state.page)) state.page = nav[0].id;
 
   app.innerHTML = `
@@ -484,28 +633,9 @@ function render() {
         .join("")}
       <div class="nav-spacer"></div>
       <div class="role-box">
-        <div class="role-label">Viewing as</div>
-        <select class="role-select" id="roleSelect">
-          <option value="admin" ${state.role === "admin" ? "selected" : ""}>Super User (Admin)</option>
-          <option value="officer" ${state.role === "officer" ? "selected" : ""}>Officer</option>
-          <option value="student" ${state.role === "student" ? "selected" : ""}>Student</option>
-        </select>
-        ${
-          state.role === "officer"
-            ? `
-          <select class="subselect" id="officerSelect">
-            ${state.officers.map((o) => `<option ${o === state.officerName ? "selected" : ""}>${esc(o)}</option>`).join("")}
-          </select>`
-            : ""
-        }
-        ${
-          state.role === "student"
-            ? `
-          <select class="subselect" id="studentSelect">
-            ${state.students.map((s) => `<option value="${s.uid}" ${s.uid === state.studentViewUid ? "selected" : ""}>${esc(s.name)}</option>`).join("")}
-          </select>`
-            : ""
-        }
+        <div class="role-label">Logged in as</div>
+        <div style="font-size:13px;font-weight:600;color:#fff;">${esc(state.auth.name || state.auth.studentUid)}</div>
+        <div style="font-size:11px;color:#7c86a8;text-transform:uppercase;letter-spacing:0.06em;margin-top:2px;">Role: ${esc(state.role)}</div>
       </div>
     </div>
     <div class="main">
@@ -521,8 +651,12 @@ function render() {
             <div class="meta">${state.settings.semester} · A.Y. ${state.settings.academicYear}${state.role === "student" ? " · " + (studentByUid(state.studentViewUid)?.name || "") : ""}${state.role === "officer" ? " · " + esc(state.officerName) : ""}</div>
           </div>
         </div>
-        <div class="no-print" style="font-size:12px;color:var(--slate);text-align:right;">
-          ${fmtDate(new Date())}
+        <div class="topbar-right no-print">
+          <div class="user-chip">
+            <span class="user-chip-role">${esc(state.role)}</span>
+            <span class="user-chip-name">${esc(state.auth.name || state.auth.studentUid)}</span>
+          </div>
+          <button class="logout-btn" id="logoutBtn">Logout</button>
         </div>
       </div>
       <div class="content" id="pageContent"></div>
@@ -536,23 +670,18 @@ function render() {
     };
   });
 
-  initSidebarInteractions();
-  closeSidebar();
-  document.getElementById("roleSelect").onchange = (e) => {
-    state.role = e.target.value;
-    state.page = NAV[state.role][0].id;
-    stopScanner();
-    render();
-  };
-  const offSel = document.getElementById("officerSelect");
-  if (offSel) offSel.onchange = (e) => (state.officerName = e.target.value);
-  const stuSel = document.getElementById("studentSelect");
-  if (stuSel)
-    stuSel.onchange = (e) => {
-      state.studentViewUid = e.target.value;
+  const logoutBtn = document.getElementById("logoutBtn");
+  if (logoutBtn) {
+    logoutBtn.onclick = () => {
+      localStorage.removeItem("attendqr-auth");
+      state.auth = null;
+      stopScanner();
       render();
     };
+  }
 
+  initSidebarInteractions();
+  closeSidebar();
   renderPage();
 }
 
@@ -1252,6 +1381,15 @@ function renderSettings() {
       ${state.officers.map((o) => `<tr><td>${esc(o)}</td><td style="text-align:right;"><button class="btn btn-sm btn-danger" data-del-officer="${esc(o)}">Remove</button></td></tr>`).join("")}
     </tbody></table>
   </div>
+  <div class="panel">
+    <div class="panel-head"><h3>Admin Credentials & Security</h3></div>
+    <p style="font-size:13px;color:var(--slate);line-height:1.5;margin-bottom:12px;">Customize your Super User login username and password below:</p>
+    <div class="field-row" style="max-width:540px;">
+      <div class="field"><label>Admin Username</label><input class="input" id="adminUserInp" value="${esc(s.adminUsername || 'admin')}"></div>
+      <div class="field"><label>New Admin Password</label><input type="password" class="input" id="adminPassInp" placeholder="Enter new password"></div>
+    </div>
+    <button class="btn btn-brass" id="saveAdminCredsBtn">Save Credentials</button>
+  </div>
   `;
 }
 
@@ -1600,28 +1738,45 @@ function afterRender(page) {
       .forEach((b) => (b.onclick = () => studentModal(b.dataset.editStudent)));
     document.querySelectorAll("[data-toggle-student]").forEach(
       (b) =>
-        (b.onclick = async () => {
+        (b.onclick = () => {
           const s = studentByUid(b.dataset.toggleStudent);
           if (!s) return;
-          const newStatus = s.status === "Active" ? "Inactive" : "Active";
-          await fetch(`/api/students/${s.uid}/`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status: newStatus }),
-          });
-          await loadData();
+          const isDeactivating = s.status === "Active";
+          const doToggle = async () => {
+            const newStatus = isDeactivating ? "Inactive" : "Active";
+            await fetch(`/api/students/${s.uid}/`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ status: newStatus }),
+            });
+            toast(`Student ${s.name} ${isDeactivating ? "deactivated" : "activated"}`, "ok");
+            await loadData();
+          };
+
+          if (isDeactivating) {
+            confirmModal(
+              "Deactivate Student Account?",
+              `Are you sure you want to deactivate <b>${esc(s.name)}</b> (${esc(s.uid)})? Deactivated students will be marked inactive and excluded from active event rosters.`,
+              doToggle,
+            );
+          } else {
+            doToggle();
+          }
         }),
     );
     document.querySelectorAll("[data-del-student]").forEach(
       (b) =>
         (b.onclick = () => {
+          const s = studentByUid(b.dataset.delStudent);
+          const studentName = s ? s.name : b.dataset.delStudent;
           confirmModal(
-            "Delete student?",
-            "This removes the student record permanently.",
+            "Delete Student Record Permanently?",
+            `Are you sure you want to permanently delete <b>${esc(studentName)}</b> (${esc(b.dataset.delStudent)})?<br><br><span style="color:var(--rust);font-weight:600;">Warning:</span> This action cannot be undone. The student profile, QR badge allocation, and all associated attendance log history will be permanently deleted from the database.`,
             async () => {
               await fetch(`/api/students/${b.dataset.delStudent}/`, {
                 method: "DELETE",
               });
+              toast(`Student ${studentName} deleted`, "ok");
               await loadData();
             },
           );
@@ -1699,13 +1854,17 @@ function afterRender(page) {
     document.querySelectorAll("[data-del-event]").forEach(
       (b) =>
         (b.onclick = () => {
+          const evId = parseInt(b.dataset.delEvent);
+          const ev = eventById(evId);
+          const eventName = ev ? ev.name : `Event #${evId}`;
           confirmModal(
-            "Delete event?",
-            "This removes the event and its attendance records permanently.",
+            "Delete Event Permanently?",
+            `Are you sure you want to permanently delete <b>${esc(eventName)}</b>?<br><br><span style="color:var(--rust);font-weight:600;">Warning:</span> This action cannot be undone. The event entry and all student attendance scan logs recorded for this event will be permanently removed from system statistics and reports.`,
             async () => {
-              await fetch(`/api/events/${b.dataset.delEvent}/`, {
+              await fetch(`/api/events/${evId}/`, {
                 method: "DELETE",
               });
+              toast(`Event ${eventName} deleted`, "ok");
               await loadData();
             },
           );
@@ -1797,6 +1956,30 @@ function afterRender(page) {
           renderPage();
         }),
     );
+    const saveAdminBtn = document.getElementById("saveAdminCredsBtn");
+    if (saveAdminBtn) {
+      saveAdminBtn.onclick = async () => {
+        const u = document.getElementById("adminUserInp").value.trim();
+        const p = document.getElementById("adminPassInp").value.trim();
+        if (!u) {
+          toast("Admin username cannot be empty", "err");
+          return;
+        }
+        const payload = { admin_username: u };
+        if (p) payload.admin_password = p;
+        const res = await fetch("/api/settings/", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          toast("Admin credentials updated successfully", "ok");
+          await loadData();
+        } else {
+          toast("Failed to update credentials", "err");
+        }
+      };
+    }
   }
 
   if (page === "my-qr") {

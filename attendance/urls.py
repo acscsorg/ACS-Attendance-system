@@ -11,4 +11,5 @@ urlpatterns = [
     path('api/attendance/', views.attendance_list, name='attendance_list'),
     path('api/dashboard-stats/', views.dashboard_stats, name='dashboard_stats'),
     path('api/settings/', views.system_settings, name='system_settings'),
+    path('api/login/', views.api_login, name='api_login'),
 ]

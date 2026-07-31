@@ -56,6 +56,8 @@ class Attendance(models.Model):
 class SystemSetting(models.Model):
     academic_year = models.CharField(max_length=50, default='2026-2027')
     semester = models.CharField(max_length=50, default='First Semester')
+    admin_username = models.CharField(max_length=100, default='admin')
+    admin_password = models.CharField(max_length=100, default='admin123')
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):

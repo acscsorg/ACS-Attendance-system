@@ -2,6 +2,7 @@ import json
 from django.shortcuts import render, get_object_or_404
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.db.models import Q
 from .models import Student, Event, Attendance, SystemSetting
 
 def index(request):
@@ -252,7 +253,8 @@ def system_settings(request):
         return JsonResponse({
             'id': setting.id,
             'academic_year': setting.academic_year,
-            'semester': setting.semester
+            'semester': setting.semester,
+            'admin_username': setting.admin_username,
         })
 
     elif request.method in ['PUT', 'POST']:
@@ -261,9 +263,72 @@ def system_settings(request):
             setting.academic_year = data['academic_year']
         if 'semester' in data:
             setting.semester = data['semester']
+        if 'admin_username' in data and data['admin_username'].strip():
+            setting.admin_username = data['admin_username'].strip()
+        if 'admin_password' in data and data['admin_password'].strip():
+            setting.admin_password = data['admin_password'].strip()
         setting.save()
         return JsonResponse({
             'id': setting.id,
             'academic_year': setting.academic_year,
-            'semester': setting.semester
+            'semester': setting.semester,
+            'admin_username': setting.admin_username,
         }, status=200)
+
+
+@csrf_exempt
+def api_login(request):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'Method not allowed'}, status=405)
+
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'status': 'error', 'message': 'Invalid JSON body'}, status=400)
+
+    role = data.get('role', '').strip()
+
+    if role == 'admin':
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip()
+        setting, _ = SystemSetting.objects.get_or_create(id=1)
+
+        if username == setting.admin_username and password == setting.admin_password:
+            return JsonResponse({'success': True, 'role': 'admin', 'name': 'Admin'}, status=200)
+        else:
+            return JsonResponse({'success': False, 'message': 'Invalid admin credentials'}, status=401)
+
+    elif role == 'officer':
+        username = data.get('username', '').strip()
+        pin = data.get('pin', '').strip()
+        if pin == '1234' or not pin:
+            return JsonResponse({'success': True, 'role': 'officer', 'name': username or 'Officer'}, status=200)
+        else:
+            return JsonResponse({'success': False, 'message': 'Invalid officer PIN'}, status=401)
+
+    elif role == 'student':
+        identifier = data.get('identifier', '').strip()
+        if not identifier:
+            return JsonResponse({'success': False, 'message': 'Student UID or Student Number is required'}, status=400)
+
+        student = Student.objects.filter(Q(uid__iexact=identifier) | Q(student_number__iexact=identifier)).first()
+        if student:
+            return JsonResponse({
+                'success': True,
+                'role': 'student',
+                'student': {
+                    'id': student.id,
+                    'uid': student.uid,
+                    'student_number': student.student_number,
+                    'name': student.name,
+                    'course': student.course,
+                    'year': student.year,
+                    'section': student.section,
+                    'status': student.status
+                }
+            }, status=200)
+        else:
+            return JsonResponse({'success': False, 'message': 'Student account not found'}, status=404)
+
+    return JsonResponse({'status': 'error', 'message': 'Invalid role specified'}, status=400)
+
