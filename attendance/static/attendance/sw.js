@@ -2,6 +2,7 @@ const CACHE_NAME = 'acs-attendance-v1';
 const ASSETS_TO_CACHE = [
   '/',
   '/static/attendance/app.js',
+  '/static/attendance/offline-db.js',
   '/static/attendance/styles.css',
   '/static/attendance/manifest.json',
   '/static/attendance/icons/icon-192.png',

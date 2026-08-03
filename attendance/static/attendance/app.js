@@ -469,7 +469,7 @@ function renderLogin() {
   <div class="login-wrapper">
     <div class="login-card">
       <div class="login-header">
-        <div class="login-logo">ACS</div>
+        <img src="/static/attendance/icons/icon-512.png" class="login-logo-img" alt="ACS Logo">
         <h2>ACS Attendance</h2>
         <div class="login-sub">Association of Computer Scientists Portal</div>
       </div>
@@ -619,7 +619,7 @@ function render() {
     <div class="sidebar-backdrop" aria-hidden="true"></div>
     <div class="sidebar" id="sidebarMenu">
       <div class="brand">
-        <div class="brand-mark">ACS</div>
+        <img src="/static/attendance/icons/icon-192.png" class="brand-img" alt="ACS Logo">
         <div>
           <div class="brand-name">ACS Attendance</div>
           <div class="brand-sub">Organization Attendance</div>
@@ -2286,11 +2286,17 @@ async function syncOfflineScans() {
       let successCount = 0;
       let dupCount = 0;
 
-      (data.results || []).forEach((r) => {
-        if (r.client_id) syncedIds.push(r.client_id);
+      for (const r of (data.results || [])) {
+        if (r.client_id) {
+          syncedIds.push(r.client_id);
+          if (window.OfflineDB && window.OfflineDB.updateDeviceScanStatus) {
+            const newStatus = r.status === "success" ? "synced" : r.status === "duplicate" ? "duplicate" : "invalid";
+            await window.OfflineDB.updateDeviceScanStatus(r.client_id, newStatus);
+          }
+        }
         if (r.status === "success") successCount++;
         if (r.status === "duplicate") dupCount++;
-      });
+      }
 
       await window.OfflineDB.removePendingScans(syncedIds);
       toast(`Sync complete! ${successCount} synced, ${dupCount} already recorded.`, "ok");

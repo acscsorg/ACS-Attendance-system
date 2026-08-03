@@ -3,6 +3,7 @@ from django.shortcuts import render, get_object_or_404
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Q
+from django.utils.dateparse import parse_datetime
 from .models import Student, Event, Attendance, SystemSetting
 
 def index(request):
@@ -375,11 +376,17 @@ def bulk_sync(request):
             results.append({'client_id': client_id, 'status': 'duplicate', 'message': 'Already recorded', 'student_name': student.name, 'student_uid': student.uid})
             continue
 
+        client_ts = item.get('timestamp')
         record = Attendance.objects.create(
             student=student,
             event=event,
             officer=officer
         )
+        if client_ts:
+            parsed_ts = parse_datetime(client_ts)
+            if parsed_ts:
+                record.timestamp = parsed_ts
+                record.save(update_fields=['timestamp'])
         results.append({
             'client_id': client_id,
             'status': 'success',

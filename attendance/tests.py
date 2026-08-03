@@ -406,3 +406,13 @@ class BulkSyncAPITestCase(TestCase):
         # Verify DB attendance count
         self.assertTrue(Attendance.objects.filter(student=self.student2, event=self.event).exists())
 
+    def test_bulk_sync_preserves_timestamp(self):
+        offline_time = "2026-08-01T10:30:00Z"
+        scans = [
+            {"client_id": "c100", "student_uid": "ST-2026-0002", "event_id": self.event.id, "officer": "Officer M. Santos", "timestamp": offline_time}
+        ]
+        response = self.client.post('/api/sync/', data=json.dumps({"scans": scans}), content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        record = Attendance.objects.get(student=self.student2, event=self.event)
+        self.assertEqual(record.timestamp.strftime("%Y-%m-%dT%H:%M:%SZ"), offline_time)
+

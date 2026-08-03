@@ -135,19 +135,19 @@ a {
   border-bottom: 1px solid var(--line-dark);
   margin-bottom: 16px;
 }
-.brand-mark {
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, var(--brass), var(--brass-dark));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: "Space Grotesk";
-  font-weight: 700;
-  color: var(--ink);
-  font-size: 15px;
+.brand-img {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
   flex-shrink: 0;
+}
+.login-logo-img {
+  width: 68px;
+  height: 68px;
+  object-fit: contain;
+  margin: 0 auto 14px;
+  display: block;
+  filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.4));
 }
 .brand-name {
   font-family: "Space Grotesk";
