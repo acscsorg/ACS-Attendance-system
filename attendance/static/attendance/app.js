@@ -430,12 +430,14 @@ const NAV = {
     { id: "students", label: "Student List", icon: "students" },
     { id: "events", label: "Events", icon: "events" },
     { id: "scanner", label: "QR Scanner", icon: "scanner" },
+    { id: "device-log", label: "Device Audit Log", icon: "stats" },
     { id: "statistics", label: "Statistics", icon: "stats" },
     { id: "settings", label: "Semester Settings", icon: "settings" },
   ],
   officer: [
     { id: "dashboard", label: "Dashboard", icon: "dashboard" },
     { id: "scanner", label: "QR Scanner", icon: "scanner" },
+    { id: "device-log", label: "Device Audit Log", icon: "stats" },
     { id: "students", label: "Student List", icon: "students" },
     { id: "events", label: "Events", icon: "events" },
   ],
@@ -451,6 +453,7 @@ const PAGE_TITLES = {
   students: "Student List",
   events: "Events",
   scanner: "QR Scanner",
+  "device-log": "Local Device Audit Log",
   statistics: "Statistics",
   settings: "Semester Settings",
   "my-qr": "My QR Code",
@@ -695,6 +698,7 @@ function renderPage() {
     students: renderStudents,
     events: renderEvents,
     scanner: renderScanner,
+    "device-log": renderDeviceLogPage,
     statistics: renderStatistics,
     settings: renderSettings,
     "my-qr": renderMyQr,
@@ -1158,6 +1162,94 @@ function updateScanUI() {
   }
 }
 
+/* ============================= DEVICE AUDIT LOG PAGE ============================= */
+function renderDeviceLogPage() {
+  setTimeout(() => loadAndRenderDeviceLog(), 50);
+  return `
+  <div class="panel">
+    <div class="panel-head">
+      <div>
+        <h3>📱 Local Device Scan Audit Trail</h3>
+        <div class="hint">Permanent on-device record of all scans recorded by officers on this device</div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-sm btn-brass" id="exportDeviceLogBtn">Export CSV</button>
+        <button class="btn btn-sm btn-danger" id="clearDeviceLogBtn">Clear Log</button>
+      </div>
+    </div>
+    <div id="deviceLogTableWrap">
+      <div class="empty">Loading local audit records...</div>
+    </div>
+  </div>
+  `;
+}
+
+async function loadAndRenderDeviceLog() {
+  const container = document.getElementById("deviceLogTableWrap");
+  if (!container) return;
+
+  let logs = [];
+  if (window.OfflineDB) {
+    logs = await window.OfflineDB.getDeviceScanHistory();
+  }
+
+  if (!logs || !logs.length) {
+    container.innerHTML = '<div class="empty">No scan audit logs recorded on this device yet.</div>';
+    return;
+  }
+
+  const rows = logs.map((l) => {
+    let pillClass = "pill-green";
+    let statusText = "Synced";
+
+    if (l.sync_status === "pending_offline") {
+      pillClass = "pill-blue";
+      statusText = "Saved Offline";
+    } else if (l.sync_status === "duplicate") {
+      pillClass = "pill-amber";
+      statusText = "Already Scanned";
+    } else if (l.sync_status === "invalid" || l.sync_status === "error") {
+      pillClass = "pill-rust";
+      statusText = "Invalid / Error";
+    }
+
+    const dt = new Date(l.timestamp);
+    const dateStr = dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    const timeStr = dt.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+    return `
+      <tr>
+        <td><span class="uid-chip">${esc(l.student_uid)}</span></td>
+        <td><b>${esc(l.student_name)}</b></td>
+        <td>${esc(l.event_name)}</td>
+        <td>${esc(l.officer)}</td>
+        <td><span style="font-size:12px;color:var(--slate);">${dateStr} · ${timeStr}</span></td>
+        <td><span class="pill ${pillClass}">${statusText}</span></td>
+      </tr>
+    `;
+  }).join("");
+
+  container.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Student UID</th>
+            <th>Name</th>
+            <th>Event</th>
+            <th>Officer</th>
+            <th>Timestamp</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 async function handleScan(rawUid) {
   const uid = (rawUid || "").trim();
   if (!uid) return;
@@ -1199,18 +1291,33 @@ async function handleScan(rawUid) {
   }
 
   const s = studentByUid(uid) || { name: uid, uid: uid, course: "ACS Member", year: "Student" };
+  const evObj = eventById(parseInt(evId));
+  const eventNameStr = evObj ? evObj.name : "Event #" + evId;
+  const officerStr = state.officerName || (state.auth ? state.auth.name : "Officer");
 
   if (isOfflineMode) {
+    const clientId = 'scan_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     const payload = {
+      client_id: clientId,
       student_uid: uid,
       event_id: parseInt(evId),
-      officer: state.officerName || "Officer J. Reyes",
+      officer: officerStr,
     };
     if (window.OfflineDB) {
       await window.OfflineDB.savePendingScan(payload);
+      await window.OfflineDB.saveDeviceScanHistory({
+        client_id: clientId,
+        student_uid: uid,
+        student_name: s.name,
+        event_name: eventNameStr,
+        event_id: parseInt(evId),
+        officer: officerStr,
+        timestamp: new Date().toISOString(),
+        sync_status: "pending_offline"
+      });
     }
     state.attendance.push({
-      id: "offline_" + Date.now(),
+      id: clientId,
       studentUid: uid,
       eventId: parseInt(evId),
       timestamp: new Date().toISOString(),
@@ -1238,14 +1345,47 @@ async function handleScan(rawUid) {
       name: data.student_name || s.name,
       status: "present",
     });
+    if (window.OfflineDB) {
+      await window.OfflineDB.saveDeviceScanHistory({
+        student_uid: uid,
+        student_name: data.student_name || s.name,
+        event_name: eventNameStr,
+        event_id: parseInt(evId),
+        officer: data.officer || officerStr,
+        timestamp: data.timestamp || new Date().toISOString(),
+        sync_status: "synced"
+      });
+    }
     beep("ok");
   } else if (res && res.status === 409) {
     state.lastScan = { status: "dup", student: s };
     state.recentScans.unshift({ name: s.name, status: "dup" });
+    if (window.OfflineDB) {
+      await window.OfflineDB.saveDeviceScanHistory({
+        student_uid: uid,
+        student_name: s.name,
+        event_name: eventNameStr,
+        event_id: parseInt(evId),
+        officer: officerStr,
+        timestamp: new Date().toISOString(),
+        sync_status: "duplicate"
+      });
+    }
     beep("dup");
   } else {
     state.lastScan = { status: "invalid", raw: uid };
     state.recentScans.unshift({ name: uid || "(empty)", status: "invalid" });
+    if (window.OfflineDB) {
+      await window.OfflineDB.saveDeviceScanHistory({
+        student_uid: uid,
+        student_name: "Invalid QR (" + uid + ")",
+        event_name: eventNameStr,
+        event_id: parseInt(evId),
+        officer: officerStr,
+        timestamp: new Date().toISOString(),
+        sync_status: "invalid"
+      });
+    }
     beep("bad");
   }
 
@@ -1971,6 +2111,43 @@ function afterRender(page) {
       );
       downloadFile("attendance-report.csv", csv, "text/csv");
     };
+  }
+
+  if (page === "device-log") {
+    const exportBtn = document.getElementById("exportDeviceLogBtn");
+    if (exportBtn) {
+      exportBtn.onclick = async () => {
+        if (!window.OfflineDB) return;
+        const logs = await window.OfflineDB.getDeviceScanHistory();
+        if (!logs || !logs.length) {
+          toast("No audit logs to export", "err");
+          return;
+        }
+        const csvRows = logs.map((l) => ({
+          Student_UID: l.student_uid,
+          Student_Name: l.student_name,
+          Event: l.event_name,
+          Officer: l.officer,
+          Timestamp: l.timestamp,
+          Status: l.sync_status
+        }));
+        const csvContent = toCSV(csvRows, ["Student_UID", "Student_Name", "Event", "Officer", "Timestamp", "Status"]);
+        downloadFile("device_scan_audit_log.csv", csvContent, "text/csv");
+        toast("Device scan audit log exported", "ok");
+      };
+    }
+    const clearBtn = document.getElementById("clearDeviceLogBtn");
+    if (clearBtn) {
+      clearBtn.onclick = async () => {
+        if (confirm("Clear local device audit log?")) {
+          if (window.OfflineDB) {
+            await window.OfflineDB.clearDeviceScanHistory();
+            toast("Local audit log cleared", "ok");
+            loadAndRenderDeviceLog();
+          }
+        }
+      };
+    }
   }
 
   if (page === "settings") {
