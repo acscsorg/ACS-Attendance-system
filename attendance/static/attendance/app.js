@@ -860,6 +860,28 @@ function renderQrGenerator() {
   if (!state.qrUid || !studentByUid(state.qrUid))
     state.qrUid = activeStudents()[0]?.uid;
   const s = studentByUid(state.qrUid);
+
+  state.qrPage = state.qrPage || 1;
+  state.qrSearch = state.qrSearch || "";
+
+  const q = state.qrSearch.toLowerCase().trim();
+  const allActive = activeStudents();
+  const filtered = q
+    ? allActive.filter(
+        (st) =>
+          st.name.toLowerCase().includes(q) ||
+          st.uid.toLowerCase().includes(q) ||
+          (st.studentNumber || "").toLowerCase().includes(q),
+      )
+    : allActive;
+
+  const QR_PER_PAGE = 10;
+  const totalPages = Math.ceil(filtered.length / QR_PER_PAGE) || 1;
+  if (state.qrPage > totalPages) state.qrPage = totalPages;
+  if (state.qrPage < 1) state.qrPage = 1;
+
+  const startIdx = (state.qrPage - 1) * QR_PER_PAGE;
+
   return `
   <div class="panel no-print">
     <div class="panel-head">
@@ -867,16 +889,36 @@ function renderQrGenerator() {
       <div class="hint">QR encodes the Student UID only, for security</div>
     </div>
     <div class="toolbar">
-      <div class="search-wrap">${ICONS.search}<input class="input" id="qrSearch" placeholder="Search student by name or UID…"></div>
+      <div class="search-wrap">${ICONS.search}<input class="input" id="qrSearch" placeholder="Search student by name, UID, or Student No…" value="${esc(state.qrSearch)}"></div>
     </div>
     <div id="qrSingle"></div>
   </div>
   <div class="panel">
     <div class="panel-head">
-      <h3>Bulk Badges — All Active Students</h3>
-      <button class="btn btn-brass no-print" id="printAllBtn">Print All Badges</button>
+      <div>
+        <h3>Bulk Badges (${filtered.length} Student${filtered.length === 1 ? "" : "s"})</h3>
+        <div class="hint">Showing ${filtered.length ? startIdx + 1 : 0}–${Math.min(startIdx + QR_PER_PAGE, filtered.length)} of ${filtered.length} badges (10 per page)</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-brass no-print" id="printAllBtn">Print Badges</button>
+      </div>
     </div>
+
     <div class="badge-grid" id="bulkBadges"></div>
+
+    ${
+      totalPages > 1
+        ? `
+      <div class="pagination-bar no-print" style="margin-top:20px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding-top:14px;">
+        <div style="font-size:12.5px;color:var(--slate);">Page <b>${state.qrPage}</b> of <b>${totalPages}</b></div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-sm" id="prevQrPage" ${state.qrPage <= 1 ? "disabled" : ""}>← Prev</button>
+          <button class="btn btn-sm" id="nextQrPage" ${state.qrPage >= totalPages ? "disabled" : ""}>Next →</button>
+        </div>
+      </div>
+    `
+        : ""
+    }
   </div>
   `;
 }
@@ -1835,24 +1877,76 @@ function afterRender(page) {
       single.innerHTML = badgeCard(s, "single-qrimg-");
       renderQrInto(s, "single-qrimg-" + s.uid.replace(/[^a-zA-Z0-9]/g, ""));
     }
-    document.getElementById("qrSearch").oninput = (e) => {
-      const q = e.target.value.toLowerCase();
-      const found = activeStudents().find(
-        (st) =>
-          st.name.toLowerCase().includes(q) || st.uid.toLowerCase().includes(q),
-      );
-      if (found) {
-        state.qrUid = found.uid;
+
+    const searchInp = document.getElementById("qrSearch");
+    if (searchInp) {
+      searchInp.oninput = (e) => {
+        state.qrSearch = e.target.value;
+        state.qrPage = 1;
+        const q = state.qrSearch.toLowerCase().trim();
+        const found = activeStudents().find(
+          (st) =>
+            st.name.toLowerCase().includes(q) ||
+            st.uid.toLowerCase().includes(q) ||
+            (st.studentNumber || "").toLowerCase().includes(q),
+        );
+        if (found) state.qrUid = found.uid;
         renderPage();
-      }
-    };
+      };
+    }
+
+    const q = (state.qrSearch || "").toLowerCase().trim();
+    const allActive = activeStudents();
+    const filtered = q
+      ? allActive.filter(
+          (st) =>
+            st.name.toLowerCase().includes(q) ||
+            st.uid.toLowerCase().includes(q) ||
+            (st.studentNumber || "").toLowerCase().includes(q),
+        )
+      : allActive;
+
+    const QR_PER_PAGE = 10;
+    const totalPages = Math.ceil(filtered.length / QR_PER_PAGE) || 1;
+    if (state.qrPage > totalPages) state.qrPage = totalPages;
+    if (state.qrPage < 1) state.qrPage = 1;
+
+    const startIdx = (state.qrPage - 1) * QR_PER_PAGE;
+    const paged = filtered.slice(startIdx, startIdx + QR_PER_PAGE);
+
     const bulk = document.getElementById("bulkBadges");
-    bulk.innerHTML = activeStudents()
-      .map((st) => badgeCard(st, "bulk-qrimg-"))
-      .join("");
-    activeStudents().forEach((st) =>
-      renderQrInto(st, "bulk-qrimg-" + st.uid.replace(/[^a-zA-Z0-9]/g, "")),
-    );
+    if (bulk) {
+      if (!paged.length) {
+        bulk.innerHTML = '<div class="empty">No active students match your search.</div>';
+      } else {
+        bulk.innerHTML = paged
+          .map((st) => badgeCard(st, "bulk-qrimg-"))
+          .join("");
+        paged.forEach((st) =>
+          renderQrInto(st, "bulk-qrimg-" + st.uid.replace(/[^a-zA-Z0-9]/g, "")),
+        );
+      }
+    }
+
+    const prevBtn = document.getElementById("prevQrPage");
+    if (prevBtn) {
+      prevBtn.onclick = () => {
+        if (state.qrPage > 1) {
+          state.qrPage--;
+          renderPage();
+        }
+      };
+    }
+    const nextBtn = document.getElementById("nextQrPage");
+    if (nextBtn) {
+      nextBtn.onclick = () => {
+        if (state.qrPage < totalPages) {
+          state.qrPage++;
+          renderPage();
+        }
+      };
+    }
+
     document.querySelectorAll("[data-dl]").forEach((btn) => {
       btn.onclick = () => {
         const canvas = document
@@ -1866,7 +1960,9 @@ function afterRender(page) {
         }
       };
     });
-    document.getElementById("printAllBtn").onclick = () => window.print();
+
+    const printBtn = document.getElementById("printAllBtn");
+    if (printBtn) printBtn.onclick = () => window.print();
   }
 
   if (page === "students") {
