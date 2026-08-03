@@ -10,7 +10,7 @@ The **ACS Attendance System** is the official digital attendance tracking platfo
 ## 🛠️ Tech Stack
 
 - **Backend:** Python / Django
-- **Database:** SQLite (Official Final Database)
+- **Database:** SQLite
 - **Environment & Dependency Manager:** Pipenv
 - **Frontend:** HTML5, CSS3, JavaScript (Vanilla ES6+)
 
@@ -20,8 +20,8 @@ The **ACS Attendance System** is the official digital attendance tracking platfo
 
 > [!IMPORTANT]
 > **Database File Notice:**  
-> **SQLite** is the designated final database for this system. Database files (`db.sqlite3`) are excluded from Git version control to ensure data security and privacy.  
-> **Every developer / contributor must generate their own local `db.sqlite3` database file in the project root directory by running `python manage.py migrate` (inside `pipenv shell`) during setup.**
+> Database files (`db.sqlite3`) are excluded from Git version control to ensure data security and privacy.  
+> **Every developer / contributor must generate their own local `db.sqlite3` database file in the project root directory by running `pipenv run python manage.py migrate` during setup.**
 
 ---
 
@@ -46,21 +46,19 @@ cd ACS-Attendance-system
 
 ---
 
-### 2. Install Dependencies & Activate Pipenv Shell
+### 2. Install Dependencies with Pipenv
 
-Install required dependencies:
+Install all required packages into a managed Pipenv environment:
 
 ```bash
 pipenv install
 ```
 
-Activate the Pipenv virtual environment shell:
-
-```bash
-pipenv shell
-```
-
-Once inside `pipenv shell`, your terminal is automatically environment-configured. You can run all `python` commands directly without prefixing `pipenv run`!
+> Or if you prefer to spawn an active shell session inside Pipenv **(HEAVILY RECOMMENDED)**:
+>
+> ```bash
+> pipenv shell
+> ```
 
 ---
 
@@ -69,17 +67,17 @@ Once inside `pipenv shell`, your terminal is automatically environment-configure
 Generate your root `db.sqlite3` database file and apply all migrations:
 
 ```bash
-python manage.py migrate
+pipenv run python manage.py migrate
 ```
 
 ---
 
 ### 4. Run the Development Server
 
-Start the local Django server:
+Start the local server using Pipenv:
 
 ```bash
-python manage.py runserver
+pipenv run python manage.py runserver
 ```
 
 Then open your browser and go to:
@@ -95,7 +93,7 @@ http://127.0.0.1:8000/
 Run the full backend TDD test suite to verify system integrity:
 
 ```bash
-python manage.py test attendance
+pipenv run python manage.py test attendance
 ```
 
 ---
