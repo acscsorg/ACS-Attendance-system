@@ -4,7 +4,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AttendQR</title>
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ACS Attendance">
+<title>ACS Attendance System</title>
+<link rel="icon" type="image/png" href="{% static 'attendance/icons/icon-192.png' %}">
+<link rel="apple-touch-icon" href="{% static 'attendance/icons/icon-192.png' %}">
+<link rel="manifest" href="{% static 'attendance/manifest.json' %}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -15,6 +22,20 @@
 <div id="app"></div>
 <div class="toast-wrap" id="toastWrap"></div>
 
+<script src="{% static 'attendance/offline-db.js' %}"></script>
 <script src="{% static 'attendance/app.js' %}"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then((reg) => {
+        console.log('ServiceWorker registered:', reg);
+      })
+      .catch((err) => {
+        console.warn('ServiceWorker registration failed:', err);
+      });
+  });
+}
+</script>
 </body>
 </html>

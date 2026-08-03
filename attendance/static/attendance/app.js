@@ -652,6 +652,7 @@ function render() {
           </div>
         </div>
         <div class="topbar-right no-print">
+          <div id="syncBadgeContainer" style="display:inline-flex;align-items:center;"></div>
           <div class="user-chip">
             <span class="user-chip-role">${esc(state.role)}</span>
             <span class="user-chip-name">${esc(state.auth.name || state.auth.studentUid)}</span>
@@ -683,6 +684,7 @@ function render() {
   initSidebarInteractions();
   closeSidebar();
   renderPage();
+  updateSyncBadge();
 }
 
 function renderPage() {
@@ -1119,7 +1121,7 @@ function renderRecentScansRows() {
           (r) => `
     <div class="recent-scan-row">
       <div>${esc(r.name)}</div>
-      <div class="pill ${r.status === "present" ? "pill-green" : r.status === "dup" ? "pill-amber" : "pill-rust"}">${r.status === "present" ? "Present" : r.status === "dup" ? "Duplicate" : "Invalid"}</div>
+      <div class="pill ${r.status === "present" ? "pill-green" : r.status === "dup" ? "pill-amber" : r.status === "offline_queued" ? "pill-blue" : "pill-rust"}">${r.status === "present" ? "Present" : r.status === "dup" ? "Duplicate" : r.status === "offline_queued" ? "Saved Offline" : "Invalid"}</div>
     </div>`,
         )
         .join("")
@@ -1134,10 +1136,13 @@ function updateScanUI() {
       resHtml = "";
     if (res.status === "present") {
       resClass = "present";
-      resHtml = `<div class="big-status" style="color:var(--forest)">✓ PRESENT</div><div class="s-name">${esc(res.student.name)}</div><div class="s-meta">${esc(res.student.course)} · ${esc(res.student.year)}</div><div class="s-meta mono">${esc(res.student.uid)}</div>`;
+      resHtml = `<div class="big-status" style="color:var(--forest)">✓ PRESENT</div><div class="s-name">${esc(res.student.name)}</div><div class="s-meta">${esc(res.student.course || '')} · ${esc(res.student.year || '')}</div><div class="s-meta mono">${esc(res.student.uid || '')}</div>`;
     } else if (res.status === "dup") {
       resClass = "dup";
       resHtml = `<div class="big-status" style="color:var(--amber)">ALREADY SCANNED</div><div class="s-name">${esc(res.student.name)}</div><div class="s-meta">Recorded previously</div>`;
+    } else if (res.status === "offline_queued") {
+      resClass = "dup";
+      resHtml = `<div class="big-status" style="color:#0284c7">⚡ SAVED OFFLINE</div><div class="s-name">${esc(res.student.name)}</div><div class="s-meta">Stored in device · Will sync when online</div><div class="s-meta mono">${esc(res.student.uid || '')}</div>`;
     } else {
       resClass = "invalid";
       resHtml = `<div class="big-status" style="color:var(--rust)">✕ INVALID QR CODE</div><div class="s-meta">"${esc(res.raw)}" does not match any student UID.</div>`;
@@ -1171,44 +1176,77 @@ async function handleScan(rawUid) {
     return;
   }
 
-  try {
-    const res = await fetch("/api/scan/", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        student_uid: uid,
-        event_id: parseInt(evId),
-        officer: state.officerName || "Officer J. Reyes",
-      }),
-    });
-    const data = await res.json();
-    const s = studentByUid(uid) || { name: uid, uid: uid };
+  let data = null;
+  let res = null;
+  let isOfflineMode = !navigator.onLine;
 
-    if (res.status === 201) {
-      state.attendance.push({
-        id: data.attendance_id,
-        studentUid: uid,
-        eventId: parseInt(evId),
-        timestamp: data.timestamp,
-        officer: data.officer,
+  if (!isOfflineMode) {
+    try {
+      res = await fetch("/api/scan/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          student_uid: uid,
+          event_id: parseInt(evId),
+          officer: state.officerName || "Officer J. Reyes",
+        }),
       });
-      state.lastScan = { status: "present", student: s };
-      state.recentScans.unshift({
-        name: data.student_name || s.name,
-        status: "present",
-      });
-      beep("ok");
-    } else if (res.status === 409) {
-      state.lastScan = { status: "dup", student: s };
-      state.recentScans.unshift({ name: s.name, status: "dup" });
-      beep("dup");
-    } else {
-      state.lastScan = { status: "invalid", raw: uid };
-      state.recentScans.unshift({ name: uid || "(empty)", status: "invalid" });
-      beep("bad");
+      data = await res.json();
+    } catch (e) {
+      console.warn("Scan API fetch error, switching to offline queue:", e);
+      isOfflineMode = true;
     }
-  } catch (e) {
-    console.error("Scan API error", e);
+  }
+
+  const s = studentByUid(uid) || { name: uid, uid: uid, course: "ACS Member", year: "Student" };
+
+  if (isOfflineMode) {
+    const payload = {
+      student_uid: uid,
+      event_id: parseInt(evId),
+      officer: state.officerName || "Officer J. Reyes",
+    };
+    if (window.OfflineDB) {
+      await window.OfflineDB.savePendingScan(payload);
+    }
+    state.attendance.push({
+      id: "offline_" + Date.now(),
+      studentUid: uid,
+      eventId: parseInt(evId),
+      timestamp: new Date().toISOString(),
+      officer: payload.officer,
+      isOffline: true
+    });
+    state.lastScan = { status: "offline_queued", student: s };
+    state.recentScans.unshift({
+      name: s.name + " (Saved Offline)",
+      status: "offline_queued",
+    });
+    beep("ok");
+    toast("Network offline — scan saved locally!", "ok");
+    updateSyncBadge();
+  } else if (res && res.status === 201) {
+    state.attendance.push({
+      id: data.attendance_id,
+      studentUid: uid,
+      eventId: parseInt(evId),
+      timestamp: data.timestamp,
+      officer: data.officer,
+    });
+    state.lastScan = { status: "present", student: s };
+    state.recentScans.unshift({
+      name: data.student_name || s.name,
+      status: "present",
+    });
+    beep("ok");
+  } else if (res && res.status === 409) {
+    state.lastScan = { status: "dup", student: s };
+    state.recentScans.unshift({ name: s.name, status: "dup" });
+    beep("dup");
+  } else {
+    state.lastScan = { status: "invalid", raw: uid };
+    state.recentScans.unshift({ name: uid || "(empty)", status: "invalid" });
+    beep("bad");
   }
 
   updateScanUI();
@@ -2011,3 +2049,108 @@ function renderQrInto(student, elId) {
 
 /* ============================= INIT ============================= */
 loadData();
+
+/* ============================= PWA OFFLINE SYNC ============================= */
+async function updateSyncBadge() {
+  const container = document.getElementById("syncBadgeContainer");
+  if (!container) return;
+
+  let pendingCount = 0;
+  if (window.OfflineDB) {
+    pendingCount = await window.OfflineDB.getPendingCount();
+  }
+
+  const isOnline = navigator.onLine;
+  const isSyncing = window.isSyncingScans;
+
+  let statusText = isOnline ? "Online" : "Offline";
+  let dotClass = isOnline ? "sync-dot" : "sync-dot offline";
+
+  if (isSyncing) {
+    statusText = "Syncing...";
+    dotClass = "sync-dot syncing";
+  } else if (pendingCount > 0) {
+    statusText = `${pendingCount} pending`;
+  }
+
+  container.innerHTML = `
+    <div class="sync-status-chip" title="${pendingCount} offline scans waiting to sync. Click to sync now." onclick="triggerManualSync()">
+      <span class="${dotClass}"></span>
+      <span>${statusText}</span>
+    </div>
+  `;
+}
+
+async function syncOfflineScans() {
+  if (!navigator.onLine) return;
+  if (window.isSyncingScans) return;
+  if (!window.OfflineDB) return;
+
+  const pending = await window.OfflineDB.getPendingScans();
+  if (!pending || pending.length === 0) {
+    updateSyncBadge();
+    return;
+  }
+
+  window.isSyncingScans = true;
+  updateSyncBadge();
+  toast(`Syncing ${pending.length} offline scan(s)...`, "info");
+
+  try {
+    const res = await fetch("/api/sync/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scans: pending }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const syncedIds = [];
+      let successCount = 0;
+      let dupCount = 0;
+
+      (data.results || []).forEach((r) => {
+        if (r.client_id) syncedIds.push(r.client_id);
+        if (r.status === "success") successCount++;
+        if (r.status === "duplicate") dupCount++;
+      });
+
+      await window.OfflineDB.removePendingScans(syncedIds);
+      toast(`Sync complete! ${successCount} synced, ${dupCount} already recorded.`, "ok");
+      loadData();
+    } else {
+      toast("Sync failed (server unavailable)", "err");
+    }
+  } catch (err) {
+    console.warn("Offline sync error", err);
+  } finally {
+    window.isSyncingScans = false;
+    updateSyncBadge();
+  }
+}
+
+function triggerManualSync() {
+  if (!navigator.onLine) {
+    toast("Cannot sync while offline", "err");
+    return;
+  }
+  syncOfflineScans();
+}
+
+window.addEventListener("online", () => {
+  toast("Network reconnected! Syncing offline scans...", "ok");
+  syncOfflineScans();
+});
+
+window.addEventListener("offline", () => {
+  toast("Network disconnected — offline mode active", "err");
+  updateSyncBadge();
+});
+
+if (navigator.serviceWorker) {
+  navigator.serviceWorker.addEventListener("message", (event) => {
+    if (event.data && event.data.type === "TRIGGER_SYNC") {
+      syncOfflineScans();
+    }
+  });
+}

@@ -12,4 +12,6 @@ urlpatterns = [
     path('api/dashboard-stats/', views.dashboard_stats, name='dashboard_stats'),
     path('api/settings/', views.system_settings, name='system_settings'),
     path('api/login/', views.api_login, name='api_login'),
+    path('api/sync/', views.bulk_sync, name='bulk_sync'),
+    path('sw.js', views.service_worker, name='service_worker'),
 ]
