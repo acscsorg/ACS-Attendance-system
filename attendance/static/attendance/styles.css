@@ -12,18 +12,18 @@
   --paper: #f4f7f4;
   --paper-raised: #ffffff;
   
-  --brass: #c89b3c;
-  --brass-dark: #9c7726;
-  --brass-tint: #f6eedb;
+  --brass: #2d6a4f;
+  --brass-dark: #1b4332;
+  --brass-tint: #d8f3dc;
   
   --rust: #b3452e;
   --rust-tint: #f6e1db;
   
   --forest: #1a361f;
-  --forest-tint: #eaf2ec;
+  --forest-tint: #d8f3dc;
   
-  --amber: #c98a2c;
-  --amber-tint: #f6e7cf;
+  --amber: #d97706;
+  --amber-tint: #fef3c7;
   
   --slate: #546358;
   --line: #d8e2da;
@@ -208,7 +208,7 @@ a {
 }
 .nav-item.active {
   background: var(--brass);
-  color: #0f1712;
+  color: #ffffff;
   font-weight: 600;
 }
 .nav-item svg {
@@ -499,11 +499,11 @@ body.sidebar-open {
 .btn-brass {
   background: var(--brass);
   border-color: var(--brass-dark);
-  color: var(--ink);
+  color: #ffffff;
 }
 .btn-brass:hover {
   background: var(--brass-dark);
-  color: #fff;
+  color: #ffffff;
 }
 .btn-dark {
   background: var(--ink);

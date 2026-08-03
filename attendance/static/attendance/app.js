@@ -828,7 +828,7 @@ function svgHBar(data, isPercent = false) {
         return `<g>
         <title>${esc(d.label)}: ${valStr}</title>
         <text x="0" y="${y + 19}" font-size="12" fill="#151E33" font-family="Inter">${esc(displayLabel)}</text>
-        <rect x="${labelWidth}" y="${y + 6}" width="${w}" height="16" rx="4" fill="#C89B3C"/>
+        <rect x="${labelWidth}" y="${y + 6}" width="${w}" height="16" rx="4" fill="#2d6a4f"/>
         <text x="${labelWidth + w + 8}" y="${y + 18}" font-size="12" font-weight="600" fill="#5B6478">${valStr}</text>
       </g>`;
       })
