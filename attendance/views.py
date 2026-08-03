@@ -3,6 +3,7 @@ from django.shortcuts import render, get_object_or_404
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Q
+from django.utils.dateparse import parse_datetime
 from .models import Student, Event, Attendance, SystemSetting
 
 def index(request):
@@ -331,4 +332,85 @@ def api_login(request):
             return JsonResponse({'success': False, 'message': 'Student account not found'}, status=404)
 
     return JsonResponse({'status': 'error', 'message': 'Invalid role specified'}, status=400)
+
+
+@csrf_exempt
+def bulk_sync(request):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'Method not allowed'}, status=405)
+
+    try:
+        data = json.loads(request.body)
+        scans = data.get('scans', [])
+    except Exception:
+        return JsonResponse({'status': 'error', 'message': 'Invalid JSON'}, status=400)
+
+    results = []
+    for item in scans:
+        client_id = item.get('client_id')
+        student_uid = item.get('student_uid')
+        event_id = item.get('event_id')
+        officer = item.get('officer', '')
+
+        try:
+            student = Student.objects.get(uid=student_uid)
+        except Student.DoesNotExist:
+            results.append({'client_id': client_id, 'status': 'error', 'message': 'Student not found', 'student_uid': student_uid})
+            continue
+
+        if student.status != 'Active':
+            results.append({'client_id': client_id, 'status': 'error', 'message': 'Student account is inactive', 'student_uid': student_uid, 'student_name': student.name})
+            continue
+
+        try:
+            event = Event.objects.get(pk=event_id)
+        except Event.DoesNotExist:
+            results.append({'client_id': client_id, 'status': 'error', 'message': 'Event not found', 'student_uid': student_uid})
+            continue
+
+        if event.status != 'Open':
+            results.append({'client_id': client_id, 'status': 'error', 'message': 'Event is closed for attendance', 'student_uid': student_uid})
+            continue
+
+        if Attendance.objects.filter(student=student, event=event).exists():
+            results.append({'client_id': client_id, 'status': 'duplicate', 'message': 'Already recorded', 'student_name': student.name, 'student_uid': student.uid})
+            continue
+
+        client_ts = item.get('timestamp')
+        record = Attendance.objects.create(
+            student=student,
+            event=event,
+            officer=officer
+        )
+        if client_ts:
+            parsed_ts = parse_datetime(client_ts)
+            if parsed_ts:
+                record.timestamp = parsed_ts
+                record.save(update_fields=['timestamp'])
+        results.append({
+            'client_id': client_id,
+            'status': 'success',
+            'message': 'Attendance recorded',
+            'attendance_id': record.id,
+            'student_name': student.name,
+            'student_uid': student.uid,
+            'event_name': event.name,
+            'timestamp': record.timestamp.isoformat(),
+            'officer': record.officer
+        })
+
+    return JsonResponse({'status': 'success', 'results': results}, status=200)
+
+
+def service_worker(request):
+    import os
+    from django.conf import settings
+    sw_path = os.path.join(settings.BASE_DIR, 'attendance', 'static', 'attendance', 'sw.js')
+    if os.path.exists(sw_path):
+        with open(sw_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        response = HttpResponse(content, content_type='application/javascript')
+        response['Service-Worker-Allowed'] = '/'
+        return response
+    return HttpResponse('// Service worker not found', content_type='application/javascript', status=404)
 

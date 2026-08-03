@@ -356,3 +356,63 @@ class AuthAPITestCase(TestCase):
         response = self.client.post('/api/login/', data=json.dumps(payload), content_type='application/json')
         self.assertEqual(response.status_code, 404)
 
+
+class BulkSyncAPITestCase(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.student1 = Student.objects.create(
+            uid="ST-2026-0001", student_number="21-1001", name="Ana Dela Cruz",
+            course="BSCS", year="1st Year", section="1", status="Active"
+        )
+        self.student2 = Student.objects.create(
+            uid="ST-2026-0002", student_number="21-1002", name="Bea Reyes",
+            course="BSCS", year="1st Year", section="1", status="Active"
+        )
+        self.event = Event.objects.create(
+            name="General Assembly", date=date(2026, 8, 15), time=time(9, 0),
+            venue="Auditorium", status="Open"
+        )
+
+    def test_bulk_sync_mixed_batch(self):
+        # Pre-record student1 attendance to trigger duplicate check
+        Attendance.objects.create(student=self.student1, event=self.event, officer="Officer J. Reyes")
+
+        scans = [
+            {"client_id": "c1", "student_uid": "ST-2026-0001", "event_id": self.event.id, "officer": "Officer J. Reyes"},
+            {"client_id": "c2", "student_uid": "ST-2026-0002", "event_id": self.event.id, "officer": "Officer M. Santos"},
+            {"client_id": "c3", "student_uid": "ST-9999-9999", "event_id": self.event.id, "officer": "Officer M. Santos"}
+        ]
+
+        response = self.client.post('/api/sync/', data=json.dumps({"scans": scans}), content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['status'], 'success')
+        
+        results = data['results']
+        self.assertEqual(len(results), 3)
+
+        # c1 should be duplicate
+        self.assertEqual(results[0]['client_id'], 'c1')
+        self.assertEqual(results[0]['status'], 'duplicate')
+
+        # c2 should be success
+        self.assertEqual(results[1]['client_id'], 'c2')
+        self.assertEqual(results[1]['status'], 'success')
+
+        # c3 should be error (student not found)
+        self.assertEqual(results[2]['client_id'], 'c3')
+        self.assertEqual(results[2]['status'], 'error')
+
+        # Verify DB attendance count
+        self.assertTrue(Attendance.objects.filter(student=self.student2, event=self.event).exists())
+
+    def test_bulk_sync_preserves_timestamp(self):
+        offline_time = "2026-08-01T10:30:00Z"
+        scans = [
+            {"client_id": "c100", "student_uid": "ST-2026-0002", "event_id": self.event.id, "officer": "Officer M. Santos", "timestamp": offline_time}
+        ]
+        response = self.client.post('/api/sync/', data=json.dumps({"scans": scans}), content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        record = Attendance.objects.get(student=self.student2, event=self.event)
+        self.assertEqual(record.timestamp.strftime("%Y-%m-%dT%H:%M:%SZ"), offline_time)
+

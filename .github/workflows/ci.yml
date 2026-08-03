@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "develop"]
+  pull_request:
+    branches: ["main", "develop"]
+
+jobs:
+  test:
+    name: Run Django Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run migrations
+        env:
+          DJANGO_SETTINGS_MODULE: ACS_Attendance_System.settings
+          SECRET_KEY: ${{ secrets.SECRET_KEY || 'ci-dummy-secret-key-not-for-production' }}
+        run: python manage.py migrate --noinput
+
+      - name: Run tests
+        env:
+          DJANGO_SETTINGS_MODULE: ACS_Attendance_System.settings
+          SECRET_KEY: ${{ secrets.SECRET_KEY || 'ci-dummy-secret-key-not-for-production' }}
+        run: python manage.py test attendance --verbosity=2
