@@ -507,8 +507,8 @@ function renderLogin() {
           activeTab === 'student'
             ? `
           <div class="field">
-            <label>Student Number or Student UID</label>
-            <input class="input" id="loginIdentifier" placeholder="e.g. 2023-8-0044 or ST-2026-0001" autofocus required>
+            <label>Student Number</label>
+            <input class="input" id="loginIdentifier" placeholder="e.g. 2026-8-6767" autofocus required>
           </div>
           <div class="field">
             <label>Password</label>
@@ -1855,7 +1855,7 @@ function studentModal(uid) {
       <div class="field"><label>Student Number</label><input id="f_num" value="${esc(s.studentNumber)}"></div>
       <div class="field"><label>Status</label><select id="f_status"><option ${s.status === "Active" ? "selected" : ""}>Active</option><option ${s.status === "Inactive" ? "selected" : ""}>Inactive</option></select></div>
     </div>
-    <div class="field"><label>Course</label><select id="f_course">${COURSES.map((c) => `<option ${s.course === c ? "selected" : ""}>${c}</option>`).join("")}</select></div>
+    <div class="field"><label>Course</label><select id="f_course" disabled style="background:var(--paper);opacity:0.85;cursor:not-allowed;"><option selected>BS Computer Science</option></select></div>
     <div class="field-row">
       <div class="field"><label>Year Level</label><select id="f_year">${YEARS.map((y) => `<option ${s.year === y ? "selected" : ""}>${y}</option>`).join("")}</select></div>
       <div class="field"><label>Section</label><select id="f_section">${SECTIONS.map((x) => `<option ${s.section === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
