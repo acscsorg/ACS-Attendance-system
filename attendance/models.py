@@ -10,8 +10,10 @@ class Student(models.Model):
 
     uid = models.CharField(max_length=50, unique=True)
     student_number = models.CharField(max_length=50, unique=True)
+    first_name = models.CharField(max_length=100, blank=True, default='')
+    last_name = models.CharField(max_length=100, blank=True, default='')
     name = models.CharField(max_length=150)
-    course = models.CharField(max_length=100)
+    course = models.CharField(max_length=100, default='BS Computer Science')
     year = models.CharField(max_length=50)
     section = models.CharField(max_length=50)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Active')
@@ -20,12 +22,40 @@ class Student(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def extract_last_name(self):
+        if self.last_name and self.last_name.strip():
+            return self.last_name.strip().upper()
         parts = self.name.strip().split()
-        if len(parts) > 1:
-            return parts[-1].upper()
-        return self.name.strip().upper()
+        if len(parts) <= 1:
+            return self.name.strip().upper()
+
+        prefixes = {'DELA', 'DE', 'DEL', 'SAN', 'SANTA', 'SANTO', 'LA', 'LAS', 'LOS', 'DA', 'DOS', 'VAN', 'VON'}
+
+        # 3-part compound last names (e.g., "De La Cruz", "De Los Santos")
+        if len(parts) >= 3 and parts[-3].upper() in prefixes and parts[-2].upper() in prefixes:
+            return f"{parts[-3]} {parts[-2]} {parts[-1]}".upper()
+
+        # 2-part compound last names (e.g., "Dela Cruz", "San Juan")
+        if len(parts) >= 2 and parts[-2].upper() in prefixes:
+            return f"{parts[-2]} {parts[-1]}".upper()
+
+        return parts[-1].upper()
 
     def save(self, *args, **kwargs):
+        if self.name:
+            parts = self.name.strip().split()
+            if len(parts) > 1:
+                derived_fn = " ".join(parts[:-1])
+                derived_ln = parts[-1]
+                if not self.first_name or not self.last_name or f"{self.first_name} {self.last_name}" != self.name:
+                    self.first_name = derived_fn
+                    self.last_name = derived_ln
+            else:
+                if not self.first_name or not self.last_name or f"{self.first_name} {self.last_name}" != self.name:
+                    self.first_name = self.name
+                    self.last_name = self.name
+        elif self.first_name and self.last_name:
+            self.name = f"{self.first_name.strip()} {self.last_name.strip()}"
+
         if not self.password:
             default_pass = self.extract_last_name()
             self.password = make_password(default_pass)
