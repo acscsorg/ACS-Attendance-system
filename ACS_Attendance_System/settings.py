@@ -17,6 +17,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 import os
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 # Load environment variables from .env if present
 env_file = BASE_DIR / '.env'
@@ -38,7 +40,7 @@ allowed_hosts_env = os.environ.get('ALLOWED_HOSTS')
 if allowed_hosts_env:
     ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_env.split(',') if h.strip()]
 else:
-    ALLOWED_HOSTS = ['*']
+    ALLOWED_HOSTS = ['alienista.pythonanywhere.com', 'localhost', '127.0.0.1']
 
 
 # Application definition
@@ -128,4 +130,8 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
+CSRF_TRUSTED_ORIGINS = [
+    'https://alienista.pythonanywhere.com',
+    'http://127.0.0.1',
+    'http://localhost',
+]
