@@ -50,12 +50,13 @@ const SECTIONS = ["1", "2", "3"];
 /* ============================= PERSISTENCE & API SYNC ============================= */
 async function loadData() {
   try {
-    const [studentsRes, eventsRes, attendanceRes, settingsRes] =
+    const [studentsRes, eventsRes, attendanceRes, settingsRes, officersRes] =
       await Promise.all([
         fetch("/api/students/").then((r) => r.json()),
         fetch("/api/events/").then((r) => r.json()),
         fetch("/api/attendance/").then((r) => r.json()),
         fetch("/api/settings/").then((r) => r.json()),
+        fetch("/api/officers/").then((r) => r.json()).catch(() => []),
       ]);
 
     state.students = (studentsRes || []).map((s) => ({
@@ -87,6 +88,12 @@ async function loadData() {
       officer: a.officer,
     }));
 
+    state.officers = (officersRes || []).map((o) => ({
+      id: o.id,
+      name: o.name,
+      status: o.status,
+    }));
+
     if (settingsRes && settingsRes.academic_year) {
       state.settings = {
         academicYear: settingsRes.academic_year,
@@ -110,13 +117,16 @@ async function loadData() {
         if (cached.events && cached.events.length) state.events = cached.events;
         if (cached.attendance) state.attendance = cached.attendance;
         if (cached.settings) state.settings = cached.settings;
-        if (cached.officers) state.officers = cached.officers;
+        if (cached.officers && cached.officers.length) state.officers = cached.officers;
       }
     } catch (err) {}
   }
   state.ready = true;
   if (state.students.length) state.studentViewUid = state.students[0].uid;
-  if (state.officers.length) state.officerName = state.officers[0];
+  if (state.officers.length) {
+    const activeOff = state.officers.find(o => o.status === 'Active');
+    state.officerName = activeOff ? activeOff.name : (typeof state.officers[0] === 'string' ? state.officers[0] : state.officers[0].name);
+  }
   render();
 }
 
@@ -497,37 +507,35 @@ function renderLogin() {
           activeTab === 'student'
             ? `
           <div class="field">
-            <label>Student UID or Student No.</label>
-            <input class="input" id="loginIdentifier" placeholder="e.g. ST-2026-0001 or 21-1000" autofocus required>
+            <label>Student Number or Student UID</label>
+            <input class="input" id="loginIdentifier" placeholder="e.g. 2023-8-0044 or ST-2026-0001" autofocus required>
           </div>
-          <div class="demo-hints">
-            <span style="font-size:11px;color:var(--slate);display:block;margin-bottom:4px;">Quick Demo Select:</span>
-            ${activeStudents().slice(0, 3).map(s => `<button type="button" class="demo-chip" data-quick-stu="${esc(s.uid)}">${esc(s.name)} (${esc(s.uid)})</button>`).join('')}
+          <div class="field">
+            <label>Password</label>
+            <input type="password" class="input" id="loginPassword" placeholder="Default: Capitalized Last Name" required>
           </div>
           <button type="submit" class="btn btn-brass btn-block" style="margin-top:16px;">Log In as Student</button>
         `
             : activeTab === 'officer'
             ? `
           <div class="field">
-            <label>Select Officer Account</label>
-            <select class="select" id="loginOfficerName">
-              ${state.officers.map(o => `<option>${esc(o)}</option>`).join('')}
-            </select>
+            <label>Officer Name</label>
+            <input class="input" id="loginOfficerName" placeholder="Enter Officer Name" autofocus required>
           </div>
           <div class="field">
             <label>Officer PIN</label>
-            <input type="password" class="input" id="loginOfficerPin" placeholder="Default PIN: 1234" value="1234" required>
+            <input type="password" class="input" id="loginOfficerPin" placeholder="Enter PIN" required>
           </div>
           <button type="submit" class="btn btn-brass btn-block" style="margin-top:16px;">Log In as Officer</button>
         `
             : `
           <div class="field">
             <label>Admin Username</label>
-            <input class="input" id="loginAdminUser" placeholder="Enter username" value="${esc(state.settings.adminUsername || 'admin')}" required>
+            <input class="input" id="loginAdminUser" placeholder="Enter username" autofocus required>
           </div>
           <div class="field">
             <label>Admin Password</label>
-            <input type="password" class="input" id="loginAdminPass" placeholder="Enter password" value="admin123" required>
+            <input type="password" class="input" id="loginAdminPass" placeholder="Enter password" required>
           </div>
           <button type="submit" class="btn btn-brass btn-block" style="margin-top:16px;">Log In as Admin</button>
         `
@@ -538,18 +546,74 @@ function renderLogin() {
   `;
 }
 
+function showFirstTimePasswordModal(identifier) {
+  openModal(`
+    <h3>First-Time Login — Set Password</h3>
+    <p style="font-size:12.5px;color:var(--slate);margin-bottom:14px;line-height:1.5;">Welcome! Your default password is your capitalized <b>Last Name</b>. Please create a new secure password (minimum 6 characters) to continue.</p>
+    <div class="field">
+      <label>Current Password (Capitalized Last Name)</label>
+      <input type="password" class="input" id="resetCurrentPass" placeholder="e.g. DELA CRUZ" required>
+    </div>
+    <div class="field">
+      <label>New Password</label>
+      <input type="password" class="input" id="resetNewPass" placeholder="Minimum 6 characters" required>
+    </div>
+    <div class="field">
+      <label>Confirm New Password</label>
+      <input type="password" class="input" id="resetConfirmPass" placeholder="Re-enter new password" required>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-brass" id="saveNewPassBtn">Set Password & Continue</button>
+    </div>
+  `);
+
+  document.getElementById("saveNewPassBtn").onclick = async () => {
+    const curPass = document.getElementById("resetCurrentPass").value.trim();
+    const newPass = document.getElementById("resetNewPass").value.trim();
+    const confPass = document.getElementById("resetConfirmPass").value.trim();
+
+    if (!curPass || !newPass) {
+      toast("Please fill in all required password fields", "err");
+      return;
+    }
+    if (newPass.length < 6) {
+      toast("New password must be at least 6 characters long", "err");
+      return;
+    }
+    if (newPass !== confPass) {
+      toast("New passwords do not match", "err");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/student/change-password/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          identifier: identifier,
+          current_password: curPass,
+          new_password: newPass
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast("Password updated successfully!", "ok");
+        closeModal();
+        render();
+      } else {
+        toast(data.message || "Failed to update password", "err");
+      }
+    } catch (e) {
+      toast("Network error updating password", "err");
+    }
+  };
+}
+
 function afterRenderLogin() {
   document.querySelectorAll("[data-login-tab]").forEach((btn) => {
     btn.onclick = () => {
       state.loginTab = btn.dataset.loginTab;
       render();
-    };
-  });
-
-  document.querySelectorAll("[data-quick-stu]").forEach((chip) => {
-    chip.onclick = () => {
-      const inp = document.getElementById("loginIdentifier");
-      if (inp) inp.value = chip.dataset.quickStu;
     };
   });
 
@@ -563,10 +627,12 @@ function afterRenderLogin() {
 
     if (tab === "student") {
       const iden = document.getElementById("loginIdentifier").value.trim();
-      if (!iden) return;
+      const pass = document.getElementById("loginPassword").value.trim();
+      if (!iden || !pass) return;
       payload.identifier = iden;
+      payload.password = pass;
     } else if (tab === "officer") {
-      payload.username = document.getElementById("loginOfficerName").value;
+      payload.username = document.getElementById("loginOfficerName").value.trim();
       payload.pin = document.getElementById("loginOfficerPin").value.trim();
     } else if (tab === "admin") {
       payload.username = document.getElementById("loginAdminUser").value.trim();
@@ -584,7 +650,7 @@ function afterRenderLogin() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        if (res.ok) data = await res.json();
+        data = await res.json();
       } catch (err) {
         console.warn("Login API fetch error — falling back to local offline authentication:", err);
         isOfflineLogin = true;
@@ -600,8 +666,13 @@ function afterRenderLogin() {
       localStorage.setItem("attendqr-auth", JSON.stringify(state.auth));
       state.role = data.role;
       state.page = NAV[data.role][0].id;
-      toast(`Logged in successfully as ${state.auth.name}`, "ok");
-      render();
+
+      if (data.must_change_password) {
+        showFirstTimePasswordModal(payload.identifier);
+      } else {
+        toast(`Logged in successfully as ${state.auth.name}`, "ok");
+        render();
+      }
       return;
     }
 
@@ -1665,23 +1736,48 @@ function renderSettings() {
     <button class="btn btn-brass" id="startSemesterBtn">Start New Semester →</button>
   </div>
   <div class="panel">
-    <div class="panel-head"><h3>Officer Roster</h3></div>
+    <div class="panel-head"><h3>Officer Roster & Access Control</h3></div>
     <div class="toolbar">
-      <input class="input" id="newOfficerInput" placeholder="New officer name">
-      <button class="btn btn-sm" id="addOfficerBtn">+ Add Officer</button>
+      <input class="input" id="newOfficerInput" placeholder="Officer Full Name">
+      <input type="password" class="input" id="newOfficerPinInput" placeholder="Assign PIN (min 4 digits)" style="max-width:180px;">
+      <button class="btn btn-sm btn-brass" id="addOfficerBtn">+ Add Officer</button>
     </div>
-    <table><tbody>
-      ${state.officers.map((o) => `<tr><td>${esc(o)}</td><td style="text-align:right;"><button class="btn btn-sm btn-danger" data-del-officer="${esc(o)}">Remove</button></td></tr>`).join("")}
+    <table>
+      <thead>
+        <tr><th>Officer Name</th><th>Status</th><th style="text-align:right;">Actions</th></tr>
+      </thead>
+      <tbody>
+      ${
+        state.officers.length
+          ? state.officers.map((o) => {
+              const oId = typeof o === "object" ? o.id : o;
+              const oName = typeof o === "object" ? o.name : o;
+              const oStatus = typeof o === "object" ? o.status : "Active";
+              return `<tr>
+                <td><b>${esc(oName)}</b></td>
+                <td><span class="pill ${oStatus === 'Active' ? 'pill-green' : 'pill-rust'}">${esc(oStatus)}</span></td>
+                <td style="text-align:right;">
+                  <button class="btn btn-sm" data-reset-pin="${oId}" data-officer-name="${esc(oName)}">Reset PIN</button>
+                  <button class="btn btn-sm btn-danger" data-del-officer-id="${oId}" data-officer-name="${esc(oName)}">Remove</button>
+                </td>
+              </tr>`;
+            }).join("")
+          : '<tr><td colspan="3" class="empty">No officer accounts created yet.</td></tr>'
+      }
     </tbody></table>
   </div>
   <div class="panel">
-    <div class="panel-head"><h3>Admin Credentials & Security</h3></div>
-    <p style="font-size:13px;color:var(--slate);line-height:1.5;margin-bottom:12px;">Customize your Super User login username and password below:</p>
-    <div class="field-row" style="max-width:540px;">
-      <div class="field"><label>Admin Username</label><input class="input" id="adminUserInp" value="${esc(s.adminUsername || 'admin')}"></div>
-      <div class="field"><label>New Admin Password</label><input type="password" class="input" id="adminPassInp" placeholder="Enter new password"></div>
+    <div class="panel-head"><h3>Admin Credentials & Security Settings</h3></div>
+    <p style="font-size:13px;color:var(--slate);line-height:1.5;margin-bottom:12px;">Update your Super User login credentials below. Current password verification is strictly required for any changes.</p>
+    <div class="field" style="max-width:480px;">
+      <label>Current Admin Password <span style="color:var(--rust)">*</span></label>
+      <input type="password" class="input" id="adminCurrentPassInp" placeholder="Enter current admin password" required>
     </div>
-    <button class="btn btn-brass" id="saveAdminCredsBtn">Save Credentials</button>
+    <div class="field-row" style="max-width:540px;margin-top:10px;">
+      <div class="field"><label>Admin Username</label><input class="input" id="adminUserInp" value="${esc(s.adminUsername || 'admin')}"></div>
+      <div class="field"><label>New Admin Password</label><input type="password" class="input" id="adminPassInp" placeholder="Enter new password (optional)"></div>
+    </div>
+    <button class="btn btn-brass" id="saveAdminCredsBtn" style="margin-top:12px;">Save Credentials</button>
   </div>
   `;
 }
@@ -2320,47 +2416,138 @@ function afterRender(page) {
   }
 
   if (page === "settings") {
-    document.getElementById("startSemesterBtn").onclick = startNewSemester;
-    document.getElementById("addOfficerBtn").onclick = () => {
-      const inp = document.getElementById("newOfficerInput");
-      const v = inp.value.trim();
-      if (v) {
-        state.officers.push(v);
-        persist();
-        renderPage();
-      }
-    };
-    document.querySelectorAll("[data-del-officer]").forEach(
-      (b) =>
-        (b.onclick = () => {
-          state.officers = state.officers.filter(
-            (o) => o !== b.dataset.delOfficer,
-          );
-          persist();
-          renderPage();
-        }),
-    );
+    const startSemBtn = document.getElementById("startSemesterBtn");
+    if (startSemBtn) startSemBtn.onclick = startNewSemester;
+
+    const addOffBtn = document.getElementById("addOfficerBtn");
+    if (addOffBtn) {
+      addOffBtn.onclick = async () => {
+        const name = document.getElementById("newOfficerInput").value.trim();
+        const pin = document.getElementById("newOfficerPinInput").value.trim();
+        if (!name || !pin) {
+          toast("Officer name and PIN are required", "err");
+          return;
+        }
+        if (pin.length < 4) {
+          toast("Officer PIN must be at least 4 digits", "err");
+          return;
+        }
+
+        try {
+          const res = await fetch("/api/officers/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, pin }),
+          });
+          const data = await res.json();
+          if (res.ok) {
+            toast(`Officer ${name} added successfully!`, "ok");
+            await loadData();
+          } else {
+            toast(data.message || "Failed to add officer", "err");
+          }
+        } catch (e) {
+          toast("Network error adding officer", "err");
+        }
+      };
+    }
+
+    document.querySelectorAll("[data-reset-pin]").forEach((btn) => {
+      btn.onclick = () => {
+        const offId = btn.dataset.resetPin;
+        const offName = btn.dataset.officerName;
+        openModal(`
+          <h3>Reset Officer PIN — ${esc(offName)}</h3>
+          <div class="field" style="margin-top:12px;">
+            <label>New PIN (min 4 digits)</label>
+            <input type="password" class="input" id="resetOffPinInput" placeholder="Enter new PIN" required>
+          </div>
+          <div class="modal-actions">
+            <button class="btn" id="cancelModal">Cancel</button>
+            <button class="btn btn-brass" id="saveOffPinBtn">Save New PIN</button>
+          </div>
+        `);
+        document.getElementById("cancelModal").onclick = closeModal;
+        document.getElementById("saveOffPinBtn").onclick = async () => {
+          const newPin = document.getElementById("resetOffPinInput").value.trim();
+          if (!newPin || newPin.length < 4) {
+            toast("PIN must be at least 4 digits", "err");
+            return;
+          }
+          const res = await fetch(`/api/officers/${offId}/`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pin: newPin }),
+          });
+          if (res.ok) {
+            toast(`PIN for ${offName} updated successfully!`, "ok");
+            closeModal();
+            await loadData();
+          } else {
+            toast("Failed to update PIN", "err");
+          }
+        };
+      };
+    });
+
+    document.querySelectorAll("[data-del-officer-id]").forEach((btn) => {
+      btn.onclick = () => {
+        const offId = btn.dataset.delOfficerId;
+        const offName = btn.dataset.officerName;
+        confirmModal(
+          "Delete Officer Account?",
+          `Are you sure you want to delete officer account <b>${esc(offName)}</b>?`,
+          async () => {
+            await fetch(`/api/officers/${offId}/`, { method: "DELETE" });
+            toast(`Officer ${offName} removed`, "ok");
+            await loadData();
+          }
+        );
+      };
+    });
+
     const saveAdminBtn = document.getElementById("saveAdminCredsBtn");
     if (saveAdminBtn) {
       saveAdminBtn.onclick = async () => {
+        const curPass = document.getElementById("adminCurrentPassInp").value.trim();
         const u = document.getElementById("adminUserInp").value.trim();
         const p = document.getElementById("adminPassInp").value.trim();
+
+        if (!curPass) {
+          toast("Current admin password is required to save changes", "err");
+          return;
+        }
         if (!u) {
           toast("Admin username cannot be empty", "err");
           return;
         }
-        const payload = { admin_username: u };
-        if (p) payload.admin_password = p;
-        const res = await fetch("/api/settings/", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (res.ok) {
-          toast("Admin credentials updated successfully", "ok");
-          await loadData();
-        } else {
-          toast("Failed to update credentials", "err");
+
+        const payload = { current_password: curPass, admin_username: u };
+        if (p) {
+          if (p.length < 6) {
+            toast("New password must be at least 6 characters", "err");
+            return;
+          }
+          payload.new_password = p;
+        }
+
+        try {
+          const res = await fetch("/api/settings/", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            toast("Admin credentials updated successfully!", "ok");
+            document.getElementById("adminCurrentPassInp").value = "";
+            document.getElementById("adminPassInp").value = "";
+            await loadData();
+          } else {
+            toast(data.message || "Failed to update admin credentials", "err");
+          }
+        } catch (e) {
+          toast("Network error updating credentials", "err");
         }
       };
     }

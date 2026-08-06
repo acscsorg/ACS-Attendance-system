@@ -1,10 +1,28 @@
 import json
+import time
+from collections import defaultdict
 from django.shortcuts import render, get_object_or_404
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Q
 from django.utils.dateparse import parse_datetime
-from .models import Student, Event, Attendance, SystemSetting
+from django.contrib.auth.hashers import check_password, make_password
+from .models import Student, Event, Attendance, SystemSetting, Officer
+
+# Simple rate limiter for login brute-force protection
+FAILED_ATTEMPTS = defaultdict(list)
+
+def is_rate_limited(ip_address, key="global"):
+    now = time.time()
+    lookup_key = f"{ip_address}:{key}"
+    attempts = [t for t in FAILED_ATTEMPTS[lookup_key] if now - t < 900]
+    FAILED_ATTEMPTS[lookup_key] = attempts
+    return len(attempts) >= 5
+
+def record_failed_attempt(ip_address, key="global"):
+    now = time.time()
+    lookup_key = f"{ip_address}:{key}"
+    FAILED_ATTEMPTS[lookup_key].append(now)
 
 def index(request):
     return render(request, 'attendance/index.html')
@@ -247,6 +265,7 @@ def dashboard_stats(request):
 
 
 @csrf_exempt
+@csrf_exempt
 def system_settings(request):
     setting, _ = SystemSetting.objects.get_or_create(id=1)
 
@@ -260,16 +279,31 @@ def system_settings(request):
 
     elif request.method in ['PUT', 'POST']:
         data = json.loads(request.body)
+        
+        # Check if updating admin username or password
+        changing_user = 'admin_username' in data and data['admin_username'].strip() != setting.admin_username
+        changing_pass = 'new_password' in data and bool(data['new_password'].strip())
+
+        if changing_user or changing_pass:
+            current_pass = data.get('current_password', '').strip()
+            if not current_pass or not check_password(current_pass, setting.admin_password):
+                return JsonResponse({'success': False, 'message': 'Current admin password is required and must be correct to update credentials.'}, status=403)
+            
+            if changing_user:
+                setting.admin_username = data['admin_username'].strip()
+            if changing_pass:
+                if len(data['new_password'].strip()) < 6:
+                    return JsonResponse({'success': False, 'message': 'New admin password must be at least 6 characters.'}, status=400)
+                setting.admin_password = make_password(data['new_password'].strip())
+
         if 'academic_year' in data:
             setting.academic_year = data['academic_year']
         if 'semester' in data:
             setting.semester = data['semester']
-        if 'admin_username' in data and data['admin_username'].strip():
-            setting.admin_username = data['admin_username'].strip()
-        if 'admin_password' in data and data['admin_password'].strip():
-            setting.admin_password = data['admin_password'].strip()
         setting.save()
+
         return JsonResponse({
+            'success': True,
             'id': setting.id,
             'academic_year': setting.academic_year,
             'semester': setting.semester,
@@ -278,9 +312,105 @@ def system_settings(request):
 
 
 @csrf_exempt
+def officer_list_create(request):
+    if request.method == 'GET':
+        officers = list(Officer.objects.all().values('id', 'name', 'status', 'created_at'))
+        for o in officers:
+            o['created_at'] = o['created_at'].isoformat() if o.get('created_at') else ''
+        return JsonResponse(officers, safe=False)
+
+    elif request.method == 'POST':
+        data = json.loads(request.body)
+        name = data.get('name', '').strip()
+        pin = data.get('pin', '').strip()
+        status = data.get('status', 'Active')
+
+        if not name or not pin:
+            return JsonResponse({'success': False, 'message': 'Officer name and PIN are required.'}, status=400)
+
+        if Officer.objects.filter(name__iexact=name).exists():
+            return JsonResponse({'success': False, 'message': 'An officer with this name already exists.'}, status=400)
+
+        officer = Officer.objects.create(name=name, pin=pin, status=status)
+        return JsonResponse({
+            'id': officer.id,
+            'name': officer.name,
+            'status': officer.status
+        }, status=201)
+
+
+@csrf_exempt
+def officer_detail(request, pk):
+    officer = get_object_or_404(Officer, pk=pk)
+
+    if request.method == 'GET':
+        return JsonResponse({'id': officer.id, 'name': officer.name, 'status': officer.status})
+
+    elif request.method in ['PUT', 'POST']:
+        data = json.loads(request.body)
+        if 'name' in data and data['name'].strip():
+            officer.name = data['name'].strip()
+        if 'pin' in data and data['pin'].strip():
+            officer.pin = make_password(data['pin'].strip())
+        if 'status' in data:
+            officer.status = data['status']
+        officer.save()
+        return JsonResponse({'id': officer.id, 'name': officer.name, 'status': officer.status}, status=200)
+
+    elif request.method == 'DELETE':
+        officer.delete()
+        return HttpResponse(status=204)
+
+
+@csrf_exempt
+def student_change_password(request):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'Method not allowed'}, status=405)
+
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'status': 'error', 'message': 'Invalid JSON'}, status=400)
+
+    identifier = data.get('identifier', '').strip()
+    current_password = data.get('current_password', '').strip()
+    new_password = data.get('new_password', '').strip()
+
+    if not identifier or not current_password or not new_password:
+        return JsonResponse({'success': False, 'message': 'All fields are required.'}, status=400)
+
+    if len(new_password) < 6:
+        return JsonResponse({'success': False, 'message': 'New password must be at least 6 characters long.'}, status=400)
+
+    student = Student.objects.filter(Q(uid__iexact=identifier) | Q(student_number__iexact=identifier)).first()
+    if not student:
+        return JsonResponse({'success': False, 'message': 'Student account not found.'}, status=404)
+
+    valid_pass = check_password(current_password, student.password)
+    if not valid_pass and (current_password.upper() == student.extract_last_name() or current_password == student.password):
+        valid_pass = True
+
+    if not valid_pass:
+        return JsonResponse({'success': False, 'message': 'Incorrect current password.'}, status=401)
+
+    student.password = make_password(new_password)
+    student.is_first_login = False
+    student.save()
+
+    return JsonResponse({'success': True, 'message': 'Password updated successfully!'}, status=200)
+
+
+@csrf_exempt
 def api_login(request):
     if request.method != 'POST':
         return JsonResponse({'status': 'error', 'message': 'Method not allowed'}, status=405)
+
+    ip_address = request.META.get('REMOTE_ADDR', '127.0.0.1')
+    if is_rate_limited(ip_address):
+        return JsonResponse({
+            'success': False,
+            'message': 'Too many failed login attempts. Please wait 15 minutes before trying again.'
+        }, status=429)
 
     try:
         data = json.loads(request.body)
@@ -294,42 +424,54 @@ def api_login(request):
         password = data.get('password', '').strip()
         setting, _ = SystemSetting.objects.get_or_create(id=1)
 
-        if username == setting.admin_username and password == setting.admin_password:
+        if username == setting.admin_username and check_password(password, setting.admin_password):
             return JsonResponse({'success': True, 'role': 'admin', 'name': 'Admin'}, status=200)
         else:
-            return JsonResponse({'success': False, 'message': 'Invalid admin credentials'}, status=401)
+            record_failed_attempt(ip_address, username)
+            return JsonResponse({'success': False, 'message': 'Invalid login credentials'}, status=401)
 
     elif role == 'officer':
         username = data.get('username', '').strip()
         pin = data.get('pin', '').strip()
-        if pin == '1234' or not pin:
-            return JsonResponse({'success': True, 'role': 'officer', 'name': username or 'Officer'}, status=200)
+        officer = Officer.objects.filter(name__iexact=username, status='Active').first()
+        if officer and check_password(pin, officer.pin):
+            return JsonResponse({'success': True, 'role': 'officer', 'name': officer.name}, status=200)
         else:
-            return JsonResponse({'success': False, 'message': 'Invalid officer PIN'}, status=401)
+            record_failed_attempt(ip_address, username)
+            return JsonResponse({'success': False, 'message': 'Invalid login credentials'}, status=401)
 
     elif role == 'student':
         identifier = data.get('identifier', '').strip()
-        if not identifier:
-            return JsonResponse({'success': False, 'message': 'Student UID or Student Number is required'}, status=400)
+        password = data.get('password', '').strip()
 
-        student = Student.objects.filter(Q(uid__iexact=identifier) | Q(student_number__iexact=identifier)).first()
+        if not identifier or not password:
+            return JsonResponse({'success': False, 'message': 'Student Number/UID and password are required'}, status=400)
+
+        student = Student.objects.filter(Q(uid__iexact=identifier) | Q(student_number__iexact=identifier), status='Active').first()
         if student:
-            return JsonResponse({
-                'success': True,
-                'role': 'student',
-                'student': {
-                    'id': student.id,
-                    'uid': student.uid,
-                    'student_number': student.student_number,
-                    'name': student.name,
-                    'course': student.course,
-                    'year': student.year,
-                    'section': student.section,
-                    'status': student.status
-                }
-            }, status=200)
-        else:
-            return JsonResponse({'success': False, 'message': 'Student account not found'}, status=404)
+            valid_pass = check_password(password, student.password)
+            if not valid_pass and (password.upper() == student.extract_last_name() or password == student.password):
+                valid_pass = True
+
+            if valid_pass:
+                return JsonResponse({
+                    'success': True,
+                    'role': 'student',
+                    'must_change_password': student.is_first_login,
+                    'student': {
+                        'id': student.id,
+                        'uid': student.uid,
+                        'student_number': student.student_number,
+                        'name': student.name,
+                        'course': student.course,
+                        'year': student.year,
+                        'section': student.section,
+                        'status': student.status
+                    }
+                }, status=200)
+
+        record_failed_attempt(ip_address, identifier)
+        return JsonResponse({'success': False, 'message': 'Invalid login credentials'}, status=401)
 
     return JsonResponse({'status': 'error', 'message': 'Invalid role specified'}, status=400)
 

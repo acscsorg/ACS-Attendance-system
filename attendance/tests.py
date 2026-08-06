@@ -3,7 +3,7 @@ from django.test import TestCase, Client
 from django.db import IntegrityError
 from django.urls import reverse
 from datetime import date, time
-from .models import Student, Event, Attendance, SystemSetting
+from .models import Student, Event, Attendance, SystemSetting, Officer
 
 class StudentModelTest(TestCase):
     def test_create_student_success(self):
@@ -311,6 +311,9 @@ class AuthAPITestCase(TestCase):
             uid="ST-2026-0001", student_number="21-1001", name="Ana Dela Cruz",
             course="BS Computer Science", year="1st Year", section="1", status="Active"
         )
+        self.officer = Officer.objects.create(
+            name="Officer J. Reyes", pin="1234", status="Active"
+        )
 
     def test_admin_login_success(self):
         payload = {"role": "admin", "username": "admin", "password": "admin123"}
@@ -335,26 +338,46 @@ class AuthAPITestCase(TestCase):
         self.assertEqual(data['role'], "officer")
         self.assertEqual(data['name'], "Officer J. Reyes")
 
-    def test_student_login_by_uid(self):
-        payload = {"role": "student", "identifier": "ST-2026-0001"}
+    def test_student_login_with_default_last_name_password(self):
+        payload = {"role": "student", "identifier": "21-1001", "password": "CRUZ"}
         response = self.client.post('/api/login/', data=json.dumps(payload), content_type='application/json')
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data['role'], "student")
+        self.assertTrue(data['must_change_password'])
         self.assertEqual(data['student']['uid'], "ST-2026-0001")
 
-    def test_student_login_by_student_number(self):
-        payload = {"role": "student", "identifier": "21-1001"}
-        response = self.client.post('/api/login/', data=json.dumps(payload), content_type='application/json')
+    def test_student_change_password(self):
+        # Change password from default CRUZ to newsecret123
+        change_payload = {
+            "identifier": "21-1001",
+            "current_password": "CRUZ",
+            "new_password": "newsecret123"
+        }
+        res = self.client.post('/api/student/change-password/', data=json.dumps(change_payload), content_type='application/json')
+        self.assertEqual(res.status_code, 200)
+
+        # Login with new password
+        login_payload = {"role": "student", "identifier": "21-1001", "password": "newsecret123"}
+        response = self.client.post('/api/login/', data=json.dumps(login_payload), content_type='application/json')
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data['role'], "student")
-        self.assertEqual(data['student']['uid'], "ST-2026-0001")
+        self.assertFalse(data['must_change_password'])
+
+    def test_officer_crud_api(self):
+        # Create new officer
+        res = self.client.post('/api/officers/', data=json.dumps({"name": "Officer M. Santos", "pin": "5678"}), content_type='application/json')
+        self.assertEqual(res.status_code, 201)
+
+        # List officers
+        res2 = self.client.get('/api/officers/')
+        self.assertEqual(res2.status_code, 200)
+        self.assertGreaterEqual(len(res2.json()), 2)
 
     def test_student_login_not_found(self):
-        payload = {"role": "student", "identifier": "ST-9999-9999"}
+        payload = {"role": "student", "identifier": "ST-9999-9999", "password": "nopassword"}
         response = self.client.post('/api/login/', data=json.dumps(payload), content_type='application/json')
-        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.status_code, 401)
 
 
 class BulkSyncAPITestCase(TestCase):
