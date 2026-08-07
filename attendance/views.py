@@ -31,7 +31,7 @@ def index(request):
 def student_list_create(request):
     if request.method == 'GET':
         students = list(Student.objects.all().values(
-            'id', 'uid', 'student_number', 'name', 'course', 'year', 'section', 'status', 'created_at'
+            'id', 'uid', 'student_number', 'first_name', 'last_name', 'name', 'course', 'year', 'section', 'status', 'created_at'
         ))
         return JsonResponse(students, safe=False)
     
@@ -40,8 +40,10 @@ def student_list_create(request):
         student = Student.objects.create(
             uid=data['uid'],
             student_number=data['student_number'],
+            first_name=data.get('first_name', ''),
+            last_name=data.get('last_name', ''),
             name=data['name'],
-            course=data['course'],
+            course=data.get('course', 'BS Computer Science'),
             year=data['year'],
             section=data['section'],
             status=data.get('status', 'Active')
@@ -50,6 +52,8 @@ def student_list_create(request):
             'id': student.id,
             'uid': student.uid,
             'student_number': student.student_number,
+            'first_name': student.first_name,
+            'last_name': student.last_name,
             'name': student.name,
             'course': student.course,
             'year': student.year,
@@ -67,6 +71,8 @@ def student_detail(request, uid):
             'id': student.id,
             'uid': student.uid,
             'student_number': student.student_number,
+            'first_name': student.first_name,
+            'last_name': student.last_name,
             'name': student.name,
             'course': student.course,
             'year': student.year,
@@ -77,7 +83,7 @@ def student_detail(request, uid):
         
     elif request.method == 'PUT':
         data = json.loads(request.body)
-        for field in ['name', 'student_number', 'course', 'year', 'section', 'status']:
+        for field in ['first_name', 'last_name', 'name', 'student_number', 'course', 'year', 'section', 'status']:
             if field in data:
                 setattr(student, field, data[field])
         student.save()
@@ -85,6 +91,8 @@ def student_detail(request, uid):
             'id': student.id,
             'uid': student.uid,
             'student_number': student.student_number,
+            'first_name': student.first_name,
+            'last_name': student.last_name,
             'name': student.name,
             'course': student.course,
             'year': student.year,
@@ -387,8 +395,15 @@ def student_change_password(request):
         return JsonResponse({'success': False, 'message': 'Student account not found.'}, status=404)
 
     valid_pass = check_password(current_password, student.password)
-    if not valid_pass and (current_password.upper() == student.extract_last_name() or current_password == student.password):
-        valid_pass = True
+    if not valid_pass:
+        pass_upper = current_password.strip().upper()
+        last_extracted = student.extract_last_name()
+        last_single = student.name.strip().split()[-1].upper() if student.name.strip() else ''
+        if (pass_upper == last_extracted or 
+            pass_upper == last_single or 
+            pass_upper.replace(' ', '') == last_extracted.replace(' ', '') or
+            current_password == student.password):
+            valid_pass = True
 
     if not valid_pass:
         return JsonResponse({'success': False, 'message': 'Incorrect current password.'}, status=401)
@@ -450,8 +465,15 @@ def api_login(request):
         student = Student.objects.filter(Q(uid__iexact=identifier) | Q(student_number__iexact=identifier), status='Active').first()
         if student:
             valid_pass = check_password(password, student.password)
-            if not valid_pass and (password.upper() == student.extract_last_name() or password == student.password):
-                valid_pass = True
+            if not valid_pass:
+                pass_upper = password.strip().upper()
+                last_extracted = student.extract_last_name()
+                last_single = student.name.strip().split()[-1].upper() if student.name.strip() else ''
+                if (pass_upper == last_extracted or 
+                    pass_upper == last_single or 
+                    pass_upper.replace(' ', '') == last_extracted.replace(' ', '') or
+                    password == student.password):
+                    valid_pass = True
 
             if valid_pass:
                 return JsonResponse({

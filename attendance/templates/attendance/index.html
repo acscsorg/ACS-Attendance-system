@@ -23,7 +23,32 @@
 <div id="app"></div>
 <div class="toast-wrap" id="toastWrap"></div>
 
+<!-- Offline DB (IndexedDB wrapper) -->
 <script src="{% static 'attendance/offline-db.js' %}"></script>
+
+<!-- Core modules (dependency order: state → helpers → api → modals) -->
+<script src="{% static 'attendance/js/state.js' %}"></script>
+<script src="{% static 'attendance/js/helpers.js' %}"></script>
+<script src="{% static 'attendance/js/api.js' %}"></script>
+<script src="{% static 'attendance/js/modals.js' %}"></script>
+
+<!-- Page modules (each self-contained: render + afterRender) -->
+<script src="{% static 'attendance/js/pages/dashboard.js' %}"></script>
+<script src="{% static 'attendance/js/pages/qr-generator.js' %}"></script>
+<script src="{% static 'attendance/js/pages/students.js' %}"></script>
+<script src="{% static 'attendance/js/pages/events.js' %}"></script>
+<script src="{% static 'attendance/js/pages/scanner.js' %}"></script>
+<script src="{% static 'attendance/js/pages/device-log.js' %}"></script>
+<script src="{% static 'attendance/js/pages/statistics.js' %}"></script>
+<script src="{% static 'attendance/js/pages/settings.js' %}"></script>
+<script src="{% static 'attendance/js/pages/student-views.js' %}"></script>
+
+<!-- Auth, layout shell, and sync (depend on pages being defined) -->
+<script src="{% static 'attendance/js/auth.js' %}"></script>
+<script src="{% static 'attendance/js/layout.js' %}"></script>
+<script src="{% static 'attendance/js/sync.js' %}"></script>
+
+<!-- Entry point (calls loadData to bootstrap) -->
 <script src="{% static 'attendance/app.js' %}"></script>
 <script>
 if ('serviceWorker' in navigator) {
