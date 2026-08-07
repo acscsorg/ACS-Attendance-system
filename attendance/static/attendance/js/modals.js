@@ -1,12 +1,14 @@
 /* ============================= MODALS ============================= */
-function openModal(html) {
+function openModal(html, dismissable = true) {
   const wrap = document.createElement("div");
   wrap.className = "overlay";
   wrap.id = "modalOverlay";
   wrap.innerHTML = `<div class="modal">${html}</div>`;
-  wrap.onclick = (e) => {
-    if (e.target === wrap) closeModal();
-  };
+  if (dismissable) {
+    wrap.onclick = (e) => {
+      if (e.target === wrap) closeModal();
+    };
+  }
   document.body.appendChild(wrap);
 }
 function closeModal() {
