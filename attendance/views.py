@@ -395,14 +395,13 @@ def student_change_password(request):
         return JsonResponse({'success': False, 'message': 'Student account not found.'}, status=404)
 
     valid_pass = check_password(current_password, student.password)
-    if not valid_pass:
+    if not valid_pass and student.is_first_login:
         pass_upper = current_password.strip().upper()
         last_extracted = student.extract_last_name()
         last_single = student.name.strip().split()[-1].upper() if student.name.strip() else ''
         if (pass_upper == last_extracted or 
             pass_upper == last_single or 
-            pass_upper.replace(' ', '') == last_extracted.replace(' ', '') or
-            current_password == student.password):
+            pass_upper.replace(' ', '') == last_extracted.replace(' ', '')):
             valid_pass = True
 
     if not valid_pass:
@@ -465,14 +464,13 @@ def api_login(request):
         student = Student.objects.filter(Q(uid__iexact=identifier) | Q(student_number__iexact=identifier), status='Active').first()
         if student:
             valid_pass = check_password(password, student.password)
-            if not valid_pass:
+            if not valid_pass and student.is_first_login:
                 pass_upper = password.strip().upper()
                 last_extracted = student.extract_last_name()
                 last_single = student.name.strip().split()[-1].upper() if student.name.strip() else ''
                 if (pass_upper == last_extracted or 
                     pass_upper == last_single or 
-                    pass_upper.replace(' ', '') == last_extracted.replace(' ', '') or
-                    password == student.password):
+                    pass_upper.replace(' ', '') == last_extracted.replace(' ', '')):
                     valid_pass = True
 
             if valid_pass:

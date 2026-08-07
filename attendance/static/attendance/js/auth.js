@@ -62,7 +62,7 @@ function renderLogin() {
   `;
 }
 
-function showFirstTimePasswordModal(identifier) {
+function showFirstTimePasswordModal(identifier, authPayload) {
   openModal(`
     <h3>First-Time Login — Set Password</h3>
     <p style="font-size:12.5px;color:var(--slate);margin-bottom:14px;line-height:1.5;">Welcome! Your default password is your capitalized <b>Last Name</b>. Please create a new secure password (minimum 6 characters) to continue.</p>
@@ -81,7 +81,7 @@ function showFirstTimePasswordModal(identifier) {
     <div class="modal-actions">
       <button class="btn btn-brass" id="saveNewPassBtn">Set Password & Continue</button>
     </div>
-  `);
+  `, false);
 
   document.getElementById("saveNewPassBtn").onclick = async () => {
     const curPass = document.getElementById("resetCurrentPass").value.trim();
@@ -113,6 +113,16 @@ function showFirstTimePasswordModal(identifier) {
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        // Authenticate only AFTER password is successfully updated
+        state.auth = {
+          role: "student",
+          name: authPayload.name || (authPayload.student ? authPayload.student.name : "Student"),
+          studentUid: authPayload.student ? authPayload.student.uid : null,
+        };
+        localStorage.setItem("attendqr-auth", JSON.stringify(state.auth));
+        state.role = "student";
+        state.page = NAV.student[0].id;
+
         toast("Password updated successfully!", "ok");
         closeModal();
         render();
@@ -174,18 +184,18 @@ function afterRenderLogin() {
     }
 
     if (!isOfflineLogin && res && res.ok && data && data.success) {
-      state.auth = {
-        role: data.role,
-        name: data.name || (data.student ? data.student.name : "User"),
-        studentUid: data.student ? data.student.uid : null,
-      };
-      localStorage.setItem("attendqr-auth", JSON.stringify(state.auth));
-      state.role = data.role;
-      state.page = NAV[data.role][0].id;
-
       if (data.must_change_password) {
-        showFirstTimePasswordModal(payload.identifier);
+        // Do NOT store auth session until password is set
+        showFirstTimePasswordModal(payload.identifier, data);
       } else {
+        state.auth = {
+          role: data.role,
+          name: data.name || (data.student ? data.student.name : "User"),
+          studentUid: data.student ? data.student.uid : null,
+        };
+        localStorage.setItem("attendqr-auth", JSON.stringify(state.auth));
+        state.role = data.role;
+        state.page = NAV[data.role][0].id;
         toast(`Logged in successfully as ${state.auth.name}`, "ok");
         render();
       }
@@ -197,7 +207,8 @@ function afterRenderLogin() {
       if (tab === "officer") {
         const offName = payload.username;
         const pin = payload.pin;
-        if (state.officers.includes(offName) && (pin === "1234" || !pin)) {
+        const offObj = state.officers.find(o => (typeof o === "object" ? o.name : o) === offName && (typeof o === "object" ? o.status === "Active" : true));
+        if (offObj && pin) {
           state.auth = { role: "officer", name: offName, isOffline: true };
           localStorage.setItem("attendqr-auth", JSON.stringify(state.auth));
           state.role = "officer";
@@ -206,13 +217,13 @@ function afterRenderLogin() {
           render();
           return;
         } else {
-          toast("Offline Login Failed: Incorrect Officer Name or PIN", "err");
+          toast("Offline Login Failed: Officer Name or PIN required", "err");
           return;
         }
       } else if (tab === "student") {
         const iden = (payload.identifier || "").trim().toLowerCase();
         const stu = state.students.find(
-          (s) => s.uid.toLowerCase() === iden || (s.studentNumber || "").toLowerCase() === iden,
+          (s) => (s.uid.toLowerCase() === iden || (s.studentNumber || "").toLowerCase() === iden) && s.status === "Active",
         );
         if (stu) {
           state.auth = { role: "student", name: stu.name, studentUid: stu.uid, isOffline: true };
@@ -230,7 +241,7 @@ function afterRenderLogin() {
         const user = payload.username;
         const pass = payload.password;
         const adminUser = state.settings.adminUsername || "admin";
-        if (user === adminUser && (pass === "admin123" || pass)) {
+        if (user === adminUser && pass) {
           state.auth = { role: "admin", name: "Admin", isOffline: true };
           localStorage.setItem("attendqr-auth", JSON.stringify(state.auth));
           state.role = "admin";

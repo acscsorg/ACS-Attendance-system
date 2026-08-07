@@ -364,6 +364,12 @@ class AuthAPITestCase(TestCase):
         data = response.json()
         self.assertFalse(data['must_change_password'])
 
+        # Verify old default password ("CRUZ") is REJECTED after password change
+        old_login_payload = {"role": "student", "identifier": "21-1001", "password": "CRUZ"}
+        old_response = self.client.post('/api/login/', data=json.dumps(old_login_payload), content_type='application/json')
+        self.assertEqual(old_response.status_code, 401)
+        self.assertFalse(old_response.json()['success'])
+
     def test_officer_crud_api(self):
         # Create new officer
         res = self.client.post('/api/officers/', data=json.dumps({"name": "Officer M. Santos", "pin": "5678"}), content_type='application/json')
