@@ -1,4 +1,4 @@
-const CACHE_NAME = 'acs-attendance-v1';
+const CACHE_NAME = 'acs-attendance-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/static/attendance/app.js',
@@ -7,6 +7,25 @@ const ASSETS_TO_CACHE = [
   '/static/attendance/manifest.json',
   '/static/attendance/icons/icon-192.png',
   '/static/attendance/icons/icon-512.png',
+  // Core JS modules
+  '/static/attendance/js/state.js',
+  '/static/attendance/js/helpers.js',
+  '/static/attendance/js/api.js',
+  '/static/attendance/js/modals.js',
+  '/static/attendance/js/auth.js',
+  '/static/attendance/js/layout.js',
+  '/static/attendance/js/sync.js',
+  // Page modules
+  '/static/attendance/js/pages/dashboard.js',
+  '/static/attendance/js/pages/qr-generator.js',
+  '/static/attendance/js/pages/students.js',
+  '/static/attendance/js/pages/events.js',
+  '/static/attendance/js/pages/scanner.js',
+  '/static/attendance/js/pages/device-log.js',
+  '/static/attendance/js/pages/statistics.js',
+  '/static/attendance/js/pages/settings.js',
+  '/static/attendance/js/pages/student-views.js',
+  // External CDN
   'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap',
   'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js'
