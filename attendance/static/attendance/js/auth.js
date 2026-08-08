@@ -1,61 +1,27 @@
 /* ============================= LOGIN PORTAL ============================= */
 function renderLogin() {
-  state.loginTab = state.loginTab || "student";
-  const activeTab = state.loginTab;
-
   return `
   <div class="login-wrapper">
-    <div class="login-card">
-      <div class="login-header">
-        <img src="/static/attendance/icons/icon-512.png" class="login-logo-img" alt="ACS Logo">
-        <h2>ACS Attendance</h2>
-        <div class="login-sub">Association of Computer Scientists Portal</div>
+    <div class="login-card" style="text-align:center;">
+      <div class="login-header" style="text-align:center;">
+        <img src="/static/attendance/icons/icon-512.png" class="login-logo-img" alt="ACS Logo" style="margin:0 auto 12px auto;display:block;">
+        <h2 style="text-align:center;">ACS Attendance</h2>
+        <div class="login-sub" style="text-align:center;">Association of Computer Scientists Portal</div>
       </div>
 
-      <div class="login-tabs">
-        <button type="button" class="login-tab ${activeTab === 'student' ? 'active' : ''}" data-login-tab="student">Student</button>
-        <button type="button" class="login-tab ${activeTab === 'officer' ? 'active' : ''}" data-login-tab="officer">Officer</button>
-        <button type="button" class="login-tab ${activeTab === 'admin' ? 'active' : ''}" data-login-tab="admin">Admin</button>
-      </div>
-
-      <form id="loginForm">
-        ${
-          activeTab === 'student'
-            ? `
-          <div class="field">
-            <label>Student Number</label>
-            <input class="input" id="loginIdentifier" placeholder="e.g. 2026-8-6767" autofocus required>
-          </div>
-          <div class="field">
-            <label>Password</label>
-            <input type="password" class="input" id="loginPassword" placeholder="Default: Capitalized Last Name" required>
-          </div>
-          <button type="submit" class="btn btn-brass btn-block" style="margin-top:16px;">Log In as Student</button>
-        `
-            : activeTab === 'officer'
-            ? `
-          <div class="field">
-            <label>Officer Name</label>
-            <input class="input" id="loginOfficerName" placeholder="Enter Officer Name" autofocus required>
-          </div>
-          <div class="field">
-            <label>Officer PIN</label>
-            <input type="password" class="input" id="loginOfficerPin" placeholder="Enter PIN" required>
-          </div>
-          <button type="submit" class="btn btn-brass btn-block" style="margin-top:16px;">Log In as Officer</button>
-        `
-            : `
-          <div class="field">
-            <label>Admin Username</label>
-            <input class="input" id="loginAdminUser" placeholder="Enter username" autofocus required>
-          </div>
-          <div class="field">
-            <label>Admin Password</label>
-            <input type="password" class="input" id="loginAdminPass" placeholder="Enter password" required>
-          </div>
-          <button type="submit" class="btn btn-brass btn-block" style="margin-top:16px;">Log In as Admin</button>
-        `
-        }
+      <form id="loginForm" style="text-align:left;margin-top:20px;">
+        <div class="field">
+          <label>Username / Student No. / Officer Name</label>
+          <input class="input" id="loginIdentifier" placeholder="Enter identifier" autofocus required>
+        </div>
+        <div class="field">
+          <label>Password / PIN</label>
+          <input type="password" class="input" id="loginPassword" placeholder="Enter password or PIN" required>
+        </div>
+        <button type="submit" class="btn btn-brass btn-block" style="margin-top:18px;">Sign In</button>
+        <div style="text-align:center;margin-top:14px;">
+          <button type="button" id="forgotPasswordBtn" style="background:none;border:none;color:var(--gold,#d4af37);font-size:12.5px;cursor:pointer;text-decoration:underline;">Forgot Password?</button>
+        </div>
       </form>
     </div>
   </div>
@@ -136,35 +102,27 @@ function showFirstTimePasswordModal(identifier, authPayload) {
 }
 
 function afterRenderLogin() {
-  document.querySelectorAll("[data-login-tab]").forEach((btn) => {
-    btn.onclick = () => {
-      state.loginTab = btn.dataset.loginTab;
-      render();
+  const forgotBtn = document.getElementById("forgotPasswordBtn");
+  if (forgotBtn) {
+    forgotBtn.onclick = () => {
+      confirmModal(
+        "Forgot Password?",
+        "If you are a student or officer and forgot your password/PIN, please ask the system administrator to reset your credentials.",
+        () => {},
+      );
     };
-  });
+  }
 
   const form = document.getElementById("loginForm");
   if (!form) return;
 
   form.onsubmit = async (e) => {
     e.preventDefault();
-    const tab = state.loginTab;
-    let payload = { role: tab };
+    const iden = document.getElementById("loginIdentifier").value.trim();
+    const pass = document.getElementById("loginPassword").value.trim();
+    if (!iden || !pass) return;
 
-    if (tab === "student") {
-      const iden = document.getElementById("loginIdentifier").value.trim();
-      const pass = document.getElementById("loginPassword").value.trim();
-      if (!iden || !pass) return;
-      payload.identifier = iden;
-      payload.password = pass;
-    } else if (tab === "officer") {
-      payload.username = document.getElementById("loginOfficerName").value.trim();
-      payload.pin = document.getElementById("loginOfficerPin").value.trim();
-    } else if (tab === "admin") {
-      payload.username = document.getElementById("loginAdminUser").value.trim();
-      payload.password = document.getElementById("loginAdminPass").value.trim();
-    }
-
+    const payload = { identifier: iden, password: pass };
     let data = null;
     let res = null;
     let isOfflineLogin = !navigator.onLine;
@@ -186,7 +144,7 @@ function afterRenderLogin() {
     if (!isOfflineLogin && res && res.ok && data && data.success) {
       if (data.must_change_password) {
         // Do NOT store auth session until password is set
-        showFirstTimePasswordModal(payload.identifier, data);
+        showFirstTimePasswordModal(iden, data);
       } else {
         state.auth = {
           role: data.role,
@@ -204,58 +162,49 @@ function afterRenderLogin() {
 
     // Offline Authentication Fallback (When no internet connection is available)
     if (isOfflineLogin) {
-      if (tab === "officer") {
-        const offName = payload.username;
-        const pin = payload.pin;
-        const offObj = state.officers.find(o => (typeof o === "object" ? o.name : o) === offName && (typeof o === "object" ? o.status === "Active" : true));
-        if (offObj && pin) {
-          state.auth = { role: "officer", name: offName, isOffline: true };
-          localStorage.setItem("attendqr-auth", JSON.stringify(state.auth));
-          state.role = "officer";
-          state.page = NAV.officer[0].id;
-          toast(`Offline Mode — Logged in locally as ${offName}`, "ok");
-          render();
-          return;
-        } else {
-          toast("Offline Login Failed: Officer Name or PIN required", "err");
-          return;
-        }
-      } else if (tab === "student") {
-        const iden = (payload.identifier || "").trim().toLowerCase();
-        const stu = state.students.find(
-          (s) => (s.uid.toLowerCase() === iden || (s.studentNumber || "").toLowerCase() === iden) && s.status === "Active",
-        );
-        if (stu) {
-          state.auth = { role: "student", name: stu.name, studentUid: stu.uid, isOffline: true };
-          localStorage.setItem("attendqr-auth", JSON.stringify(state.auth));
-          state.role = "student";
-          state.page = NAV.student[0].id;
-          toast(`Offline Mode — Logged in locally as ${stu.name}`, "ok");
-          render();
-          return;
-        } else {
-          toast("Offline Login Failed: Student UID or No. not found in local cache", "err");
-          return;
-        }
-      } else if (tab === "admin") {
-        const user = payload.username;
-        const pass = payload.password;
-        const adminUser = state.settings.adminUsername || "admin";
-        if (user === adminUser && pass) {
-          state.auth = { role: "admin", name: "Admin", isOffline: true };
-          localStorage.setItem("attendqr-auth", JSON.stringify(state.auth));
-          state.role = "admin";
-          state.page = NAV.admin[0].id;
-          toast("Offline Mode — Logged in locally as Admin", "ok");
-          render();
-          return;
-        } else {
-          toast("Offline Login Failed: Invalid Admin credentials", "err");
-          return;
-        }
+      const adminUser = state.settings.adminUsername || "admin";
+      if (iden === adminUser && pass) {
+        state.auth = { role: "admin", name: "Admin", isOffline: true };
+        localStorage.setItem("attendqr-auth", JSON.stringify(state.auth));
+        state.role = "admin";
+        state.page = NAV.admin[0].id;
+        toast("Offline Mode — Logged in locally as Admin", "ok");
+        render();
+        return;
       }
+
+      const offObj = state.officers.find(
+        (o) => (typeof o === "object" ? o.name : o).toLowerCase() === iden.toLowerCase() && (typeof o === "object" ? o.status === "Active" : true)
+      );
+      if (offObj && pass) {
+        const offName = typeof offObj === "object" ? offObj.name : offObj;
+        state.auth = { role: "officer", name: offName, isOffline: true };
+        localStorage.setItem("attendqr-auth", JSON.stringify(state.auth));
+        state.role = "officer";
+        state.page = NAV.officer[0].id;
+        toast(`Offline Mode — Logged in locally as ${offName}`, "ok");
+        render();
+        return;
+      }
+
+      const idenLower = iden.toLowerCase();
+      const stu = state.students.find(
+        (s) => (s.uid.toLowerCase() === idenLower || (s.studentNumber || "").toLowerCase() === idenLower) && s.status === "Active"
+      );
+      if (stu) {
+        state.auth = { role: "student", name: stu.name, studentUid: stu.uid, isOffline: true };
+        localStorage.setItem("attendqr-auth", JSON.stringify(state.auth));
+        state.role = "student";
+        state.page = NAV.student[0].id;
+        toast(`Offline Mode — Logged in locally as ${stu.name}`, "ok");
+        render();
+        return;
+      }
+
+      toast("Offline Login Failed: Identifier not found in local cache", "err");
+      return;
     }
 
-    toast((data && data.message) || "Login failed", "err");
+    toast((data && data.message) || "Invalid login credentials", "err");
   };
 }

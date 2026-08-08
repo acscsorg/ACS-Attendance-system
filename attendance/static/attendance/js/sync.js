@@ -13,6 +13,7 @@ async function updateSyncBadge() {
 
   let statusText = isOnline ? "Online" : "Offline";
   let dotClass = isOnline ? "sync-dot" : "sync-dot offline";
+  let chipClass = isOnline ? "sync-status-chip" : "sync-status-chip offline-chip";
 
   if (isSyncing) {
     statusText = "Syncing...";
@@ -22,7 +23,7 @@ async function updateSyncBadge() {
   }
 
   container.innerHTML = `
-    <div class="sync-status-chip" title="${pendingCount} offline scans waiting to sync. Click to sync now." onclick="triggerManualSync()">
+    <div class="${chipClass}" title="${isOnline ? pendingCount + ' offline scans waiting to sync. Click to sync now.' : 'Network Offline — Actions disabled'}" onclick="triggerManualSync()">
       <span class="${dotClass}"></span>
       <span>${statusText}</span>
     </div>
@@ -92,13 +93,14 @@ function triggerManualSync() {
 }
 
 window.addEventListener("online", () => {
-  toast("Network reconnected! Syncing offline scans...", "ok");
+  updateSyncBadge();
   syncOfflineScans();
+  if (typeof renderPage === "function") renderPage();
 });
 
 window.addEventListener("offline", () => {
-  toast("Network disconnected — offline mode active", "err");
   updateSyncBadge();
+  if (typeof renderPage === "function") renderPage();
 });
 
 if (navigator.serviceWorker) {

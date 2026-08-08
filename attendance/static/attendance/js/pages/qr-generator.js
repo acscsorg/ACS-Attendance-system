@@ -103,35 +103,146 @@ function renderQrInto(student, elId) {
 function downloadBadgePng(idPart, filename) {
   const container = document.getElementById(idPart);
   if (!container) return;
-  const img = container.querySelector("img");
-  const canvas = container.querySelector("canvas");
-  let dataUrl = null;
 
-  if (img && img.src) {
-    dataUrl = img.src;
-  } else if (canvas) {
-    dataUrl = canvas.toDataURL("image/png");
-  }
-
-  if (dataUrl) {
-    const a = document.createElement("a");
-    a.download = (filename || "QR_Badge").replace(/[^a-zA-Z0-9_-]/g, "_") + ".png";
-    a.href = dataUrl;
-    a.click();
-    toast("Badge PNG downloaded!", "ok");
-  } else {
+  const qrImg = container.querySelector("img");
+  const qrCanvas = container.querySelector("canvas");
+  const qrSource = qrImg || qrCanvas;
+  if (!qrSource) {
     toast("Badge image loading, please click again", "err");
+    return;
   }
+
+  // Find student profile by matching UID
+  const uidMatch = idPart.replace(/^single-qrimg-|^bulk-qrimg-/, "");
+  const student = state.students.find(
+    (s) => s.uid.replace(/[^a-zA-Z0-9]/g, "") === uidMatch
+  ) || studentByUid(state.qrUid);
+
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  canvas.width = 500;
+  canvas.height = 700;
+
+  // Fallback for roundRect in older browsers
+  if (!ctx.roundRect) {
+    ctx.roundRect = function (x, y, w, h) {
+      this.rect(x, y, w, h);
+    };
+  }
+
+  // Main Card Outer Background
+  ctx.fillStyle = "#151E33";
+  ctx.beginPath();
+  ctx.roundRect(0, 0, 500, 700, 20);
+  ctx.fill();
+
+  // Top Card Header Area
+  ctx.fillStyle = "#0B1120";
+  ctx.beginPath();
+  ctx.roundRect(0, 0, 500, 220, [20, 20, 0, 0]);
+  ctx.fill();
+
+  // Header Org Brand
+  ctx.fillStyle = "#D4AF37";
+  ctx.font = "bold 13px sans-serif";
+  ctx.fillText("ATTENDQR · CAMPUS ID BADGE", 30, 45);
+
+  // Student Full Name
+  const name = student ? student.name : "Student Badge";
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = "bold 24px sans-serif";
+  ctx.fillText(name.length > 26 ? name.substring(0, 26) + "…" : name, 30, 95);
+
+  // Course & Year Level
+  const courseYear = student
+    ? `${student.course} · ${student.year}`
+    : "BS Computer Science";
+  ctx.fillStyle = "#AEB6D2";
+  ctx.font = "16px sans-serif";
+  ctx.fillText(courseYear, 30, 135);
+
+  // Divider Line
+  ctx.strokeStyle = "rgba(255,255,255,0.12)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(30, 165);
+  ctx.lineTo(470, 165);
+  ctx.stroke();
+
+  // Section & Status
+  const sectionText = student
+    ? `Section ${student.section} · ${student.status}`
+    : "Active";
+  ctx.fillStyle = "#D4AF37";
+  ctx.font = "14px sans-serif";
+  ctx.fillText(sectionText, 30, 195);
+
+  // White Background Box for QR Code
+  ctx.fillStyle = "#FFFFFF";
+  ctx.beginPath();
+  ctx.roundRect(30, 250, 210, 210, 12);
+  ctx.fill();
+
+  // Draw QR Image into box
+  try {
+    ctx.drawImage(qrSource, 40, 260, 190, 190);
+  } catch (e) {
+    console.warn("QR canvas draw error", e);
+  }
+
+  // Information Panel alongside QR
+  const infoX = 265;
+  ctx.fillStyle = "#D4AF37";
+  ctx.font = "bold 11px sans-serif";
+  ctx.fillText("SYSTEM UID", infoX, 280);
+
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = "bold 17px monospace";
+  ctx.fillText(student ? student.uid : "", infoX, 306);
+
+  ctx.fillStyle = "#D4AF37";
+  ctx.font = "bold 11px sans-serif";
+  ctx.fillText("STUDENT NUMBER", infoX, 350);
+
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = "16px monospace";
+  ctx.fillText(student ? student.studentNumber : "N/A", infoX, 376);
+
+  ctx.fillStyle = "#D4AF37";
+  ctx.font = "bold 11px sans-serif";
+  ctx.fillText("SECTION", infoX, 420);
+
+  ctx.fillStyle = "#AEB6D2";
+  ctx.font = "14px sans-serif";
+  ctx.fillText(student ? `Sec. ${student.section}` : "N/A", infoX, 444);
+
+  // Footer Line
+  ctx.strokeStyle = "rgba(255,255,255,0.15)";
+  ctx.beginPath();
+  ctx.moveTo(30, 620);
+  ctx.lineTo(470, 620);
+  ctx.stroke();
+
+  // Footer Branding
+  ctx.fillStyle = "#D4AF37";
+  ctx.font = "bold 12px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("ASSOCIATION OF COMPUTER SCIENTISTS", 250, 655);
+  ctx.textAlign = "left";
+
+  // Trigger PNG File Download
+  const dataUrl = canvas.toDataURL("image/png");
+  const a = document.createElement("a");
+  const cleanName = (
+    student ? `${student.name}_${student.studentNumber}` : filename || "QR_Badge"
+  ).replace(/[^a-zA-Z0-9_-]/g, "_");
+  a.download = `${cleanName}_Badge.png`;
+  a.href = dataUrl;
+  a.click();
+  toast("Full Badge PNG downloaded!", "ok");
 }
 
 function afterRenderQrGenerator() {
-  const single = document.getElementById("qrSingle");
-  const s = studentByUid(state.qrUid);
-  if (s) {
-    single.innerHTML = badgeCard(s, "single-qrimg-");
-    renderQrInto(s, "single-qrimg-" + s.uid.replace(/[^a-zA-Z0-9]/g, ""));
-  }
-
   const searchInp = document.getElementById("qrSearch");
   if (searchInp) {
     searchInp.oninput = (e) => {
@@ -145,10 +256,27 @@ function afterRenderQrGenerator() {
           (st.studentNumber || "").toLowerCase().includes(q),
       );
       if (found) state.qrUid = found.uid;
-      renderPage();
+      updateQrResults();
     };
   }
 
+  updateQrResults();
+
+  const printBtn = document.getElementById("printAllBtn");
+  if (printBtn) printBtn.onclick = () => window.print();
+}
+
+/* Incremental DOM update — updates single preview + bulk badges + pagination, keeps search input alive */
+function updateQrResults() {
+  // Update single preview
+  const single = document.getElementById("qrSingle");
+  const s = studentByUid(state.qrUid);
+  if (single && s) {
+    single.innerHTML = badgeCard(s, "single-qrimg-");
+    renderQrInto(s, "single-qrimg-" + s.uid.replace(/[^a-zA-Z0-9]/g, ""));
+  }
+
+  // Compute filtered + paginated list
   const q = (state.qrSearch || "").toLowerCase().trim();
   const allActive = activeStudents();
   const filtered = q
@@ -168,6 +296,7 @@ function afterRenderQrGenerator() {
   const startIdx = (state.qrPage - 1) * QR_PER_PAGE;
   const paged = filtered.slice(startIdx, startIdx + QR_PER_PAGE);
 
+  // Update bulk badges
   const bulk = document.getElementById("bulkBadges");
   if (bulk) {
     if (!paged.length) {
@@ -182,12 +311,13 @@ function afterRenderQrGenerator() {
     }
   }
 
+  // Wire pagination
   const prevBtn = document.getElementById("prevQrPage");
   if (prevBtn) {
     prevBtn.onclick = () => {
       if (state.qrPage > 1) {
         state.qrPage--;
-        renderPage();
+        updateQrResults();
       }
     };
   }
@@ -196,11 +326,12 @@ function afterRenderQrGenerator() {
     nextBtn.onclick = () => {
       if (state.qrPage < totalPages) {
         state.qrPage++;
-        renderPage();
+        updateQrResults();
       }
     };
   }
 
+  // Wire download buttons
   document.querySelectorAll("[data-dl]").forEach((btn) => {
     btn.onclick = () => {
       const s = studentByUid(btn.dataset.uid);
@@ -208,7 +339,5 @@ function afterRenderQrGenerator() {
       downloadBadgePng(btn.dataset.dl, nameStr);
     };
   });
-
-  const printBtn = document.getElementById("printAllBtn");
-  if (printBtn) printBtn.onclick = () => window.print();
 }
+

@@ -8,7 +8,7 @@ function renderEvents() {
   return `
   <div class="panel-head no-print" style="margin-bottom:14px;">
     <h3 style="font-size:16px;">${canEdit ? "Manage Events" : "Events"}</h3>
-    ${canEdit ? `<button class="btn btn-brass btn-sm" id="addEventBtn">+ Create Event</button>` : ""}
+    ${canEdit ? `<button class="btn btn-brass btn-sm" id="addEventBtn" ${isOffline() ? 'disabled title="Unavailable in offline mode"' : ''}>+ Create Event</button>` : ""}
   </div>
   ${
     list.length

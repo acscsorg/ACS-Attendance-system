@@ -113,6 +113,22 @@ class StudentAPITestCase(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertTrue(Student.objects.filter(uid="ST-2026-0002").exists())
 
+    def test_create_student_duplicate_uid_returns_409(self):
+        payload = {
+            "uid": "ST-2026-0001",
+            "student_number": "21-1001",
+            "name": "Miguel Santos Dup",
+            "course": "BS Computer Science",
+            "year": "2nd Year",
+            "section": "1",
+            "status": "Active"
+        }
+        response = self.client.post('/api/students/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 409)
+        data = response.json()
+        self.assertFalse(data['success'])
+        self.assertIn("already exists", data['message'])
+
     def test_update_student_api(self):
         payload = {
             "name": "Miguel Santos Updated",
@@ -369,6 +385,36 @@ class AuthAPITestCase(TestCase):
         old_response = self.client.post('/api/login/', data=json.dumps(old_login_payload), content_type='application/json')
         self.assertEqual(old_response.status_code, 401)
         self.assertFalse(old_response.json()['success'])
+
+    def test_unified_login(self):
+        # Admin unified login (no role provided)
+        res_admin = self.client.post('/api/login/', data=json.dumps({"identifier": "admin", "password": "admin123"}), content_type='application/json')
+        self.assertEqual(res_admin.status_code, 200)
+        self.assertEqual(res_admin.json()['role'], "admin")
+
+        # Officer unified login (no role provided)
+        res_off = self.client.post('/api/login/', data=json.dumps({"identifier": "Officer J. Reyes", "password": "1234"}), content_type='application/json')
+        self.assertEqual(res_off.status_code, 200)
+        self.assertEqual(res_off.json()['role'], "officer")
+
+        # Student unified login (no role provided)
+        res_stu = self.client.post('/api/login/', data=json.dumps({"identifier": "21-1001", "password": "CRUZ"}), content_type='application/json')
+        self.assertEqual(res_stu.status_code, 200)
+        self.assertEqual(res_stu.json()['role'], "student")
+
+    def test_student_reset_password_by_admin(self):
+        # First, student changes password
+        self.client.post('/api/student/change-password/', data=json.dumps({"identifier": "21-1001", "current_password": "CRUZ", "new_password": "newsecret123"}), content_type='application/json')
+
+        # Admin resets student password
+        res = self.client.post('/api/students/ST-2026-0001/reset-password/')
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.json()['success'])
+
+        # Verify student can login again with default password CRUZ and must_change_password is True
+        res_login = self.client.post('/api/login/', data=json.dumps({"identifier": "21-1001", "password": "CRUZ"}), content_type='application/json')
+        self.assertEqual(res_login.status_code, 200)
+        self.assertTrue(res_login.json()['must_change_password'])
 
     def test_officer_crud_api(self):
         # Create new officer

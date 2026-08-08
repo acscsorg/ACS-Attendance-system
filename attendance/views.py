@@ -4,6 +4,7 @@ from collections import defaultdict
 from django.shortcuts import render, get_object_or_404
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.db import IntegrityError
 from django.db.models import Q
 from django.utils.dateparse import parse_datetime
 from django.contrib.auth.hashers import check_password, make_password
@@ -37,17 +38,27 @@ def student_list_create(request):
     
     elif request.method == 'POST':
         data = json.loads(request.body)
-        student = Student.objects.create(
-            uid=data['uid'],
-            student_number=data['student_number'],
-            first_name=data.get('first_name', ''),
-            last_name=data.get('last_name', ''),
-            name=data['name'],
-            course=data.get('course', 'BS Computer Science'),
-            year=data['year'],
-            section=data['section'],
-            status=data.get('status', 'Active')
-        )
+        try:
+            student = Student.objects.create(
+                uid=data['uid'],
+                student_number=data['student_number'],
+                first_name=data.get('first_name', ''),
+                last_name=data.get('last_name', ''),
+                name=data['name'],
+                course=data.get('course', 'BS Computer Science'),
+                year=data['year'],
+                section=data['section'],
+                status=data.get('status', 'Active')
+            )
+        except IntegrityError as e:
+            err_str = str(e).lower()
+            if 'uid' in err_str or 'unique' in err_str or 'student_number' in err_str:
+                return JsonResponse({
+                    'success': False,
+                    'message': f"Upload failed: A student with ID '{data.get('uid', '')}' or Student Number '{data.get('student_number', '')}' already exists."
+                }, status=409)
+            return JsonResponse({'success': False, 'message': 'Database integrity error creating student.'}, status=400)
+
         res_data = {
             'id': student.id,
             'uid': student.uid,
@@ -415,6 +426,23 @@ def student_change_password(request):
 
 
 @csrf_exempt
+def student_reset_password(request, uid):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'Method not allowed'}, status=405)
+
+    student = get_object_or_404(Student, uid=uid)
+    default_pass = student.extract_last_name()
+    student.password = make_password(default_pass)
+    student.is_first_login = True
+    student.save()
+
+    return JsonResponse({
+        'success': True,
+        'message': f"Password for {student.name} has been reset to default ({default_pass}). They will be prompted to change it on next login."
+    }, status=200)
+
+
+@csrf_exempt
 def api_login(request):
     if request.method != 'POST':
         return JsonResponse({'status': 'error', 'message': 'Method not allowed'}, status=405)
@@ -431,36 +459,35 @@ def api_login(request):
     except Exception:
         return JsonResponse({'status': 'error', 'message': 'Invalid JSON body'}, status=400)
 
+    identifier = (data.get('identifier') or data.get('username') or '').strip()
+    password = (data.get('password') or data.get('pin') or '').strip()
+
+    if not identifier or not password:
+        return JsonResponse({'success': False, 'message': 'Identifier and password are required.'}, status=400)
+
     role = data.get('role', '').strip()
 
-    if role == 'admin':
-        username = data.get('username', '').strip()
-        password = data.get('password', '').strip()
-        setting, _ = SystemSetting.objects.get_or_create(id=1)
-
-        if username == setting.admin_username and check_password(password, setting.admin_password):
+    # 1. Admin login check
+    setting, _ = SystemSetting.objects.get_or_create(id=1)
+    if (not role or role == 'admin') and identifier == setting.admin_username:
+        if check_password(password, setting.admin_password):
             return JsonResponse({'success': True, 'role': 'admin', 'name': 'Admin'}, status=200)
-        else:
-            record_failed_attempt(ip_address, username)
+        elif role == 'admin':
+            record_failed_attempt(ip_address, identifier)
             return JsonResponse({'success': False, 'message': 'Invalid login credentials'}, status=401)
 
-    elif role == 'officer':
-        username = data.get('username', '').strip()
-        pin = data.get('pin', '').strip()
-        officer = Officer.objects.filter(name__iexact=username, status='Active').first()
-        if officer and check_password(pin, officer.pin):
-            return JsonResponse({'success': True, 'role': 'officer', 'name': officer.name}, status=200)
-        else:
-            record_failed_attempt(ip_address, username)
-            return JsonResponse({'success': False, 'message': 'Invalid login credentials'}, status=401)
+    # 2. Officer login check
+    if not role or role == 'officer':
+        officer = Officer.objects.filter(name__iexact=identifier, status='Active').first()
+        if officer:
+            if check_password(password, officer.pin):
+                return JsonResponse({'success': True, 'role': 'officer', 'name': officer.name}, status=200)
+            elif role == 'officer':
+                record_failed_attempt(ip_address, identifier)
+                return JsonResponse({'success': False, 'message': 'Invalid login credentials'}, status=401)
 
-    elif role == 'student':
-        identifier = data.get('identifier', '').strip()
-        password = data.get('password', '').strip()
-
-        if not identifier or not password:
-            return JsonResponse({'success': False, 'message': 'Student Number/UID and password are required'}, status=400)
-
+    # 3. Student login check
+    if not role or role == 'student':
         student = Student.objects.filter(Q(uid__iexact=identifier) | Q(student_number__iexact=identifier), status='Active').first()
         if student:
             valid_pass = check_password(password, student.password)
@@ -489,11 +516,12 @@ def api_login(request):
                         'status': student.status
                     }
                 }, status=200)
+            elif role == 'student':
+                record_failed_attempt(ip_address, identifier)
+                return JsonResponse({'success': False, 'message': 'Invalid login credentials'}, status=401)
 
-        record_failed_attempt(ip_address, identifier)
-        return JsonResponse({'success': False, 'message': 'Invalid login credentials'}, status=401)
-
-    return JsonResponse({'status': 'error', 'message': 'Invalid role specified'}, status=400)
+    record_failed_attempt(ip_address, identifier)
+    return JsonResponse({'success': False, 'message': 'Invalid login credentials'}, status=401)
 
 
 @csrf_exempt
