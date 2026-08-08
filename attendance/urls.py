@@ -14,6 +14,7 @@ urlpatterns = [
     path('api/officers/', views.officer_list_create, name='officer_list_create'),
     path('api/officers/<int:pk>/', views.officer_detail, name='officer_detail'),
     path('api/student/change-password/', views.student_change_password, name='student_change_password'),
+    path('api/students/<str:uid>/reset-password/', views.student_reset_password, name='student_reset_password'),
     path('api/login/', views.api_login, name='api_login'),
     path('api/sync/', views.bulk_sync, name='bulk_sync'),
     path('sw.js', views.service_worker, name='service_worker'),

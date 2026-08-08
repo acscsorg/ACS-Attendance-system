@@ -75,6 +75,7 @@ function renderStudents() {
             canEdit
               ? `<td><div class="row-actions">
             <button class="btn btn-sm" data-edit-student="${esc(s.uid)}">Edit</button>
+            <button class="btn btn-sm" data-reset-student="${esc(s.uid)}">Reset Pass</button>
             <button class="btn btn-sm" data-toggle-student="${esc(s.uid)}">${s.status === "Active" ? "Deactivate" : "Activate"}</button>
             <button class="btn btn-sm btn-danger" data-del-student="${esc(s.uid)}">Delete</button>
           </div></td>`
@@ -182,6 +183,7 @@ function updateStudentList() {
             canEdit
               ? `<td><div class="row-actions">
             <button class="btn btn-sm" data-edit-student="${esc(s.uid)}">Edit</button>
+            <button class="btn btn-sm" data-reset-student="${esc(s.uid)}">Reset Pass</button>
             <button class="btn btn-sm" data-toggle-student="${esc(s.uid)}">${s.status === "Active" ? "Deactivate" : "Activate"}</button>
             <button class="btn btn-sm btn-danger" data-del-student="${esc(s.uid)}">Delete</button>
           </div></td>`
@@ -244,6 +246,33 @@ function wireStudentListActions() {
   document
     .querySelectorAll("[data-edit-student]")
     .forEach((b) => (b.onclick = () => studentModal(b.dataset.editStudent)));
+  document.querySelectorAll("[data-reset-student]").forEach((b) => {
+    b.onclick = () => {
+      const s = studentByUid(b.dataset.resetStudent);
+      if (!s) return;
+      confirmModal(
+        "Reset Student Password?",
+        `Are you sure you want to reset the password for <b>${esc(s.name)}</b>?<br><br>Their password will revert to their default capitalized last name, and they will be prompted to set a new password on their next login.`,
+        async () => {
+          try {
+            const res = await fetch(`/api/students/${s.uid}/reset-password/`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+              toast(data.message || "Password reset successfully", "ok");
+              await loadData();
+            } else {
+              toast((data && data.message) || "Failed to reset password", "err");
+            }
+          } catch (e) {
+            toast("Error resetting password", "err");
+          }
+        },
+      );
+    };
+  });
   document.querySelectorAll("[data-toggle-student]").forEach(
     (b) =>
       (b.onclick = () => {
