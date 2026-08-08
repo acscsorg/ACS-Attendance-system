@@ -125,13 +125,6 @@ function downloadBadgePng(idPart, filename) {
 }
 
 function afterRenderQrGenerator() {
-  const single = document.getElementById("qrSingle");
-  const s = studentByUid(state.qrUid);
-  if (s) {
-    single.innerHTML = badgeCard(s, "single-qrimg-");
-    renderQrInto(s, "single-qrimg-" + s.uid.replace(/[^a-zA-Z0-9]/g, ""));
-  }
-
   const searchInp = document.getElementById("qrSearch");
   if (searchInp) {
     searchInp.oninput = (e) => {
@@ -145,10 +138,27 @@ function afterRenderQrGenerator() {
           (st.studentNumber || "").toLowerCase().includes(q),
       );
       if (found) state.qrUid = found.uid;
-      renderPage();
+      updateQrResults();
     };
   }
 
+  updateQrResults();
+
+  const printBtn = document.getElementById("printAllBtn");
+  if (printBtn) printBtn.onclick = () => window.print();
+}
+
+/* Incremental DOM update — updates single preview + bulk badges + pagination, keeps search input alive */
+function updateQrResults() {
+  // Update single preview
+  const single = document.getElementById("qrSingle");
+  const s = studentByUid(state.qrUid);
+  if (single && s) {
+    single.innerHTML = badgeCard(s, "single-qrimg-");
+    renderQrInto(s, "single-qrimg-" + s.uid.replace(/[^a-zA-Z0-9]/g, ""));
+  }
+
+  // Compute filtered + paginated list
   const q = (state.qrSearch || "").toLowerCase().trim();
   const allActive = activeStudents();
   const filtered = q
@@ -168,6 +178,7 @@ function afterRenderQrGenerator() {
   const startIdx = (state.qrPage - 1) * QR_PER_PAGE;
   const paged = filtered.slice(startIdx, startIdx + QR_PER_PAGE);
 
+  // Update bulk badges
   const bulk = document.getElementById("bulkBadges");
   if (bulk) {
     if (!paged.length) {
@@ -182,12 +193,13 @@ function afterRenderQrGenerator() {
     }
   }
 
+  // Wire pagination
   const prevBtn = document.getElementById("prevQrPage");
   if (prevBtn) {
     prevBtn.onclick = () => {
       if (state.qrPage > 1) {
         state.qrPage--;
-        renderPage();
+        updateQrResults();
       }
     };
   }
@@ -196,11 +208,12 @@ function afterRenderQrGenerator() {
     nextBtn.onclick = () => {
       if (state.qrPage < totalPages) {
         state.qrPage++;
-        renderPage();
+        updateQrResults();
       }
     };
   }
 
+  // Wire download buttons
   document.querySelectorAll("[data-dl]").forEach((btn) => {
     btn.onclick = () => {
       const s = studentByUid(btn.dataset.uid);
@@ -208,7 +221,5 @@ function afterRenderQrGenerator() {
       downloadBadgePng(btn.dataset.dl, nameStr);
     };
   });
-
-  const printBtn = document.getElementById("printAllBtn");
-  if (printBtn) printBtn.onclick = () => window.print();
 }
+

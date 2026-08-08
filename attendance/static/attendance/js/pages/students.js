@@ -103,34 +103,131 @@ function renderStudents() {
 }
 
 function afterRenderStudents() {
-  document.getElementById("stuSearchInput").oninput = (e) => {
+  const searchInp = document.getElementById("stuSearchInput");
+  searchInp.oninput = (e) => {
     state.stuSearch = e.target.value;
     state.stuPage = 1;
-    renderPage();
+    updateStudentList();
   };
   document.getElementById("stuYearFilter").onchange = (e) => {
     state.stuYearFilter = e.target.value;
     state.stuPage = 1;
-    renderPage();
+    updateStudentList();
   };
   document.getElementById("stuStatusFilter").onchange = (e) => {
     state.stuStatusFilter = e.target.value;
     state.stuPage = 1;
-    renderPage();
+    updateStudentList();
   };
+  wireStudentListActions();
+}
+
+/* Incremental DOM update — only replaces table + pagination, keeps toolbar/search alive */
+function updateStudentList() {
+  const canEdit = state.role === "admin";
+  const perPage = 10;
+
+  let list = state.students.filter((s) => {
+    const q = (state.stuSearch || "").toLowerCase();
+    return (
+      !q ||
+      s.name.toLowerCase().includes(q) ||
+      s.uid.toLowerCase().includes(q) ||
+      s.studentNumber.toLowerCase().includes(q)
+    );
+  });
+  if (state.stuYearFilter)
+    list = list.filter((s) => s.year === state.stuYearFilter);
+  if (state.stuStatusFilter)
+    list = list.filter((s) => s.status === state.stuStatusFilter);
+  list.sort((a, b) => {
+    const k = state.stuSort.key;
+    const d = state.stuSort.dir;
+    return String(a[k]).localeCompare(String(b[k])) * d;
+  });
+
+  const totalItems = list.length;
+  const totalPages = Math.ceil(totalItems / perPage) || 1;
+  if (state.stuPage > totalPages) state.stuPage = totalPages;
+  if (state.stuPage < 1) state.stuPage = 1;
+
+  const startIndex = (state.stuPage - 1) * perPage;
+  const paginatedList = list.slice(startIndex, startIndex + perPage);
+
+  const tableWrap = document.querySelector(".table-wrap");
+  if (tableWrap) {
+    tableWrap.innerHTML = `
+    <table>
+      <thead><tr>
+        <th data-sort="uid">UID</th><th data-sort="studentNumber">Student No.</th><th data-sort="name">Name</th>
+        <th data-sort="course">Course</th><th data-sort="year">Year</th><th data-sort="section">Section</th>
+        <th data-sort="status">Status</th><th>Attendance</th>${canEdit ? "<th></th>" : ""}
+      </tr></thead>
+      <tbody>
+      ${
+        paginatedList.length
+          ? paginatedList
+              .map(
+                (s) => `
+        <tr>
+          <td><span class="uid-chip">${esc(s.uid)}</span></td>
+          <td>${esc(s.studentNumber)}</td>
+          <td><b>${esc(s.name)}</b></td>
+          <td>${esc(s.course)}</td>
+          <td>${esc(s.year)}</td>
+          <td>${esc(s.section)}</td>
+          <td>${s.status === "Active" ? '<span class="pill pill-green">Active</span>' : '<span class="pill pill-slate">Inactive</span>'}</td>
+          <td>${studentAttendancePct(s.uid)}%</td>
+          ${
+            canEdit
+              ? `<td><div class="row-actions">
+            <button class="btn btn-sm" data-edit-student="${esc(s.uid)}">Edit</button>
+            <button class="btn btn-sm" data-toggle-student="${esc(s.uid)}">${s.status === "Active" ? "Deactivate" : "Activate"}</button>
+            <button class="btn btn-sm btn-danger" data-del-student="${esc(s.uid)}">Delete</button>
+          </div></td>`
+              : ""
+          }
+        </tr>`,
+              )
+              .join("")
+          : `<tr><td colspan="${canEdit ? 9 : 8}"><div class="empty">No students match your filters.</div></td></tr>`
+      }
+      </tbody>
+    </table>`;
+  }
+
+  const pagBar = document.querySelector(".pagination-bar");
+  if (pagBar) {
+    pagBar.innerHTML = `
+      <div style="font-size:12.5px;color:var(--slate);">
+        Showing <b>${totalItems ? startIndex + 1 : 0}</b> to <b>${Math.min(startIndex + perPage, totalItems)}</b> of <b>${totalItems}</b> students
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button class="btn btn-sm" id="stuPrevPage" ${state.stuPage <= 1 ? "disabled" : ""}>← Previous</button>
+        <span style="font-size:12.5px;font-weight:600;padding:0 8px;">Page ${state.stuPage} of ${totalPages}</span>
+        <button class="btn btn-sm" id="stuNextPage" ${state.stuPage >= totalPages ? "disabled" : ""}>Next →</button>
+      </div>`;
+  }
+
+  wireStudentListActions();
+}
+
+/* Wire table buttons — called after both renderPage and updateStudentList */
+function wireStudentListActions() {
+  const canEdit = state.role === "admin";
   const prevBtn = document.getElementById("stuPrevPage");
   if (prevBtn)
     prevBtn.onclick = () => {
       if (state.stuPage > 1) {
         state.stuPage--;
-        renderPage();
+        updateStudentList();
       }
     };
   const nextBtn = document.getElementById("stuNextPage");
   if (nextBtn)
     nextBtn.onclick = () => {
       state.stuPage++;
-      renderPage();
+      updateStudentList();
     };
   document.querySelectorAll("th[data-sort]").forEach((th) => {
     th.onclick = () => {
@@ -139,7 +236,7 @@ function afterRenderStudents() {
         key: k,
         dir: state.stuSort.key === k ? -state.stuSort.dir : 1,
       };
-      renderPage();
+      updateStudentList();
     };
   });
   const addStudentBtn = document.getElementById("addStudentBtn");
@@ -241,3 +338,4 @@ function afterRenderStudents() {
       reader.readAsText(file);
     };
 }
+

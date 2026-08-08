@@ -30,7 +30,7 @@ function renderScanner() {
     </div>
     <div class="toolbar">
       <select class="select" id="scannerEventSelect" ${!openEvents.length ? "disabled" : ""}>
-        ${openEvents.length ? openEvents.map((e) => `<option value="${e.id}" ${e.id === state.scannerEventId ? "selected" : ""}>${esc(e.name)} — ${fmtDate(e.date)}</option>`).join("") : "<option>No open events</option>"}
+        ${openEvents.length ? openEvents.map((e) => `<option value="${e.id}" ${String(e.id) === String(state.scannerEventId) ? "selected" : ""}>${esc(e.name)} — ${fmtDate(e.date)}</option>`).join("") : "<option>No open events</option>"}
       </select>
       <button class="btn ${state.scannerActive ? "btn-danger" : "btn-dark"} btn-sm" id="toggleCameraBtn" ${!openEvents.length ? "disabled" : ""}>${state.scannerActive ? "Stop Camera" : "Start Camera"}</button>
     </div>
@@ -310,7 +310,7 @@ function afterRenderScanner() {
   const sel = document.getElementById("scannerEventSelect");
   if (sel)
     sel.onchange = (e) => {
-      state.scannerEventId = e.target.value;
+      state.scannerEventId = parseInt(e.target.value) || e.target.value;
     };
   const camBtn = document.getElementById("toggleCameraBtn");
   if (camBtn)
