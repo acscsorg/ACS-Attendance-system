@@ -2,6 +2,19 @@
 let lastScannedUid = null;
 let lastScannedTime = 0;
 
+function syncScannerControls() {
+  const camBtn = document.getElementById("toggleCameraBtn");
+  if (camBtn) {
+    camBtn.className = `btn ${state.scannerActive ? "btn-danger" : "btn-dark"} btn-sm`;
+    camBtn.textContent = state.scannerActive ? "Stop Camera" : "Start Camera";
+  }
+
+  const switchBtn = document.getElementById("switchCameraBtn");
+  if (switchBtn) {
+    switchBtn.textContent = `📷 Switch (${state.cameraFacing === "environment" ? "Rear" : "Front"})`;
+  }
+}
+
 function renderScanner() {
   const openEvents = state.events.filter((e) => e.status === "Open");
   if (!state.scannerEventId || !eventById(state.scannerEventId))
@@ -245,10 +258,13 @@ async function handleScan(rawUid) {
   updateScanUI();
 }
 
-function startScanner() {
+async function startScanner() {
   if (html5QrInstance || typeof Html5Qrcode === "undefined") return;
   const qrRegion = document.getElementById("qr-reader");
   if (!qrRegion) return;
+
+  state.scannerActive = true;
+  syncScannerControls();
 
   html5QrInstance = new Html5Qrcode("qr-reader");
   const config = { fps: 10, qrbox: { width: 220, height: 220 } };
@@ -258,33 +274,30 @@ function startScanner() {
   const primaryFacing = state.cameraFacing || "environment";
   const fallbackFacing = primaryFacing === "environment" ? "user" : "environment";
 
-  html5QrInstance
-    .start({ facingMode: primaryFacing }, config, onScanSuccess, onScanError)
-    .then(() => {
-      state.scannerActive = true;
-    })
-    .catch(() => {
-      html5QrInstance
-        .start({ facingMode: fallbackFacing }, config, onScanSuccess, onScanError)
-        .then(() => {
-          state.scannerActive = true;
-        })
-        .catch(() => {
-          toast("Camera unavailable — use manual UID entry", "err");
-          html5QrInstance = null;
-          state.scannerActive = false;
-        });
-    });
+  try {
+    await html5QrInstance.start({ facingMode: primaryFacing }, config, onScanSuccess, onScanError);
+  } catch (primaryError) {
+    try {
+      await html5QrInstance.start({ facingMode: fallbackFacing }, config, onScanSuccess, onScanError);
+    } catch (fallbackError) {
+      toast("Camera unavailable — use manual UID entry", "err");
+      html5QrInstance = null;
+      state.scannerActive = false;
+      syncScannerControls();
+    }
+  }
 }
-function stopScanner() {
+async function stopScanner() {
   if (html5QrInstance) {
-    html5QrInstance
-      .stop()
-      .then(() => html5QrInstance.clear())
-      .catch(() => {});
+    const instance = html5QrInstance;
     html5QrInstance = null;
+    try {
+      await instance.stop();
+      await instance.clear();
+    } catch (error) {}
   }
   state.scannerActive = false;
+  syncScannerControls();
 }
 
 function afterRenderScanner() {
@@ -293,21 +306,26 @@ function afterRenderScanner() {
     sel.onchange = (e) => {
       state.scannerEventId = parseInt(e.target.value) || e.target.value;
     };
+  syncScannerControls();
+
   const camBtn = document.getElementById("toggleCameraBtn");
   if (camBtn)
-    camBtn.onclick = () => {
-      state.scannerActive ? stopScanner() : startScanner();
-      renderPage();
+    camBtn.onclick = async () => {
+      if (state.scannerActive) {
+        await stopScanner();
+      } else {
+        await startScanner();
+      }
     };
   const switchBtn = document.getElementById("switchCameraBtn");
   if (switchBtn) {
-    switchBtn.onclick = () => {
+    switchBtn.onclick = async () => {
       state.cameraFacing = state.cameraFacing === "environment" ? "user" : "environment";
+      syncScannerControls();
       if (state.scannerActive) {
-        stopScanner();
-        startScanner();
+        await stopScanner();
+        await startScanner();
       }
-      renderPage();
     };
   }
   const form = document.getElementById("manualScanForm");
