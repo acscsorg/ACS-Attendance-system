@@ -110,3 +110,7 @@ function parseCSV(text) {
     return row;
   });
 }
+
+function isOffline() {
+  return !navigator.onLine;
+}

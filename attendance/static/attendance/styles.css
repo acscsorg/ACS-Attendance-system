@@ -1274,6 +1274,11 @@ tr:last-child td {
   cursor: pointer;
   user-select: none;
 }
+.sync-status-chip.offline-chip {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #ef4444;
+}
 .sync-dot {
   width: 8px;
   height: 8px;
@@ -1281,7 +1286,8 @@ tr:last-child td {
   background: #22c55e;
 }
 .sync-dot.offline {
-  background: #f59e0b;
+  background: #ef4444;
+  animation: offlinePulse 1.8s infinite;
 }
 .sync-dot.syncing {
   background: #3b82f6;
@@ -1291,4 +1297,9 @@ tr:last-child td {
   0% { opacity: 0.3; }
   50% { opacity: 1; }
   100% { opacity: 0.3; }
+}
+@keyframes offlinePulse {
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.25); }
+  100% { opacity: 1; transform: scale(1); }
 }

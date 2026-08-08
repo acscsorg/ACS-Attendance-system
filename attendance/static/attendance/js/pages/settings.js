@@ -19,14 +19,14 @@ function renderSettings() {
           : "This will move the term forward to <b>Second Semester</b> of the current academic year. No student year levels will change."
       }
     </p>
-    <button class="btn btn-brass" id="startSemesterBtn">Start New Semester →</button>
+    <button class="btn btn-brass" id="startSemesterBtn" ${isOffline() ? 'disabled title="Unavailable in offline mode"' : ''}>Start New Semester →</button>
   </div>
   <div class="panel">
     <div class="panel-head"><h3>Officer Roster & Access Control</h3></div>
     <div class="toolbar">
       <input class="input" id="newOfficerInput" placeholder="Officer Full Name">
       <input type="password" class="input" id="newOfficerPinInput" placeholder="Assign PIN (min 4 digits)" style="max-width:180px;">
-      <button class="btn btn-sm btn-brass" id="addOfficerBtn">+ Add Officer</button>
+      <button class="btn btn-sm btn-brass" id="addOfficerBtn" ${isOffline() ? 'disabled title="Unavailable in offline mode"' : ''}>+ Add Officer</button>
     </div>
     <table>
       <thead>
@@ -43,8 +43,8 @@ function renderSettings() {
                 <td><b>${esc(oName)}</b></td>
                 <td><span class="pill ${oStatus === 'Active' ? 'pill-green' : 'pill-rust'}">${esc(oStatus)}</span></td>
                 <td style="text-align:right;">
-                  <button class="btn btn-sm" data-reset-pin="${oId}" data-officer-name="${esc(oName)}">Reset PIN</button>
-                  <button class="btn btn-sm btn-danger" data-del-officer-id="${oId}" data-officer-name="${esc(oName)}">Remove</button>
+                  <button class="btn btn-sm" data-reset-pin="${oId}" data-officer-name="${esc(oName)}" ${isOffline() ? 'disabled title="Unavailable in offline mode"' : ''}>Reset PIN</button>
+                  <button class="btn btn-sm btn-danger" data-del-officer-id="${oId}" data-officer-name="${esc(oName)}" ${isOffline() ? 'disabled title="Unavailable in offline mode"' : ''}>Remove</button>
                 </td>
               </tr>`;
             }).join("")
@@ -63,7 +63,7 @@ function renderSettings() {
       <div class="field"><label>Admin Username</label><input class="input" id="adminUserInp" value="${esc(s.adminUsername || 'admin')}"></div>
       <div class="field"><label>New Admin Password</label><input type="password" class="input" id="adminPassInp" placeholder="Enter new password (optional)"></div>
     </div>
-    <button class="btn btn-brass" id="saveAdminCredsBtn" style="margin-top:12px;">Save Credentials</button>
+    <button class="btn btn-brass" id="saveAdminCredsBtn" style="margin-top:12px;" ${isOffline() ? 'disabled title="Unavailable in offline mode"' : ''}>Save Credentials</button>
   </div>
   `;
 }

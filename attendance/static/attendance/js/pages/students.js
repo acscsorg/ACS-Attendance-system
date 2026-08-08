@@ -38,9 +38,9 @@ function renderStudents() {
     <div class="panel-head">
       <h3>${canEdit ? "All Students" : "Student Roster"}</h3>
       <div style="display:flex;gap:8px;">
-        ${canEdit ? `<label class="btn btn-sm">Import CSV<input type="file" accept=".csv" id="importCsv" style="display:none"></label>` : ""}
+        ${canEdit ? `<label class="btn btn-sm ${isOffline() ? 'disabled' : ''}" title="${isOffline() ? 'Unavailable in offline mode' : ''}">Import CSV<input type="file" accept=".csv" id="importCsv" style="display:none" ${isOffline() ? 'disabled' : ''}></label>` : ""}
         <button class="btn btn-sm" id="exportStudentsBtn">Export CSV</button>
-        ${canEdit ? `<button class="btn btn-brass btn-sm" id="addStudentBtn">+ Add Student</button>` : ""}
+        ${canEdit ? `<button class="btn btn-brass btn-sm" id="addStudentBtn" ${isOffline() ? 'disabled title="Unavailable in offline mode"' : ''}>+ Add Student</button>` : ""}
       </div>
     </div>
     ${!canEdit ? `<div class="hint" style="margin-bottom:12px;">View only — officers cannot add, edit, or remove student records.</div>` : ""}
