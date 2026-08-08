@@ -36,6 +36,7 @@ let state = {
   ready: false,
   scannerEventId: null,
   scannerActive: false,
+  cameraFacing: "environment",
   lastScan: null,
   recentScans: [],
   stuPage: 1,

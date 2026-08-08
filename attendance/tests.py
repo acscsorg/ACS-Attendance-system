@@ -113,6 +113,22 @@ class StudentAPITestCase(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertTrue(Student.objects.filter(uid="ST-2026-0002").exists())
 
+    def test_create_student_duplicate_uid_returns_409(self):
+        payload = {
+            "uid": "ST-2026-0001",
+            "student_number": "21-1001",
+            "name": "Miguel Santos Dup",
+            "course": "BS Computer Science",
+            "year": "2nd Year",
+            "section": "1",
+            "status": "Active"
+        }
+        response = self.client.post('/api/students/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 409)
+        data = response.json()
+        self.assertFalse(data['success'])
+        self.assertIn("already exists", data['message'])
+
     def test_update_student_api(self):
         payload = {
             "name": "Miguel Santos Updated",

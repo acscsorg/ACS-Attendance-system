@@ -49,6 +49,22 @@ function renderStudents() {
       <select class="select" id="stuYearFilter"><option value="">All Years</option>${YEARS.map((y) => `<option ${state.stuYearFilter === y ? "selected" : ""}>${y}</option>`).join("")}</select>
       <select class="select" id="stuStatusFilter"><option value="">All Status</option><option ${state.stuStatusFilter === "Active" ? "selected" : ""}>Active</option><option ${state.stuStatusFilter === "Inactive" ? "selected" : ""}>Inactive</option></select>
     </div>
+    ${
+      canEdit
+        ? `
+    <div class="csv-legend" style="margin-top:10px;margin-bottom:12px;padding:10px 14px;background:var(--panel-sub,#151c2e);border:1px solid var(--line);border-radius:8px;font-size:12px;color:var(--slate);">
+      <div style="font-weight:600;color:var(--gold,#d4af37);margin-bottom:6px;display:flex;align-items:center;gap:6px;">
+        <span>📋 CSV Import Column Format</span>
+      </div>
+      <div style="font-family:monospace;background:var(--bg,#0d111a);padding:6px 10px;border-radius:4px;overflow-x:auto;margin-bottom:6px;white-space:nowrap;">
+        uid | studentNumber | name | course | year | section | status
+      </div>
+      <div style="font-size:11.5px;color:var(--muted,#7c86a8);">
+        <b>Example:</b> <code style="font-family:monospace;color:#fff;">ST-2026-0001 | 2023-8-0044 | Lawrence Magnetico | BS Computer Science | 4th Year | 2 | Active</code>
+      </div>
+    </div>`
+        : ""
+    }
     <div class="table-wrap">
     <table>
       <thead><tr>
@@ -341,24 +357,41 @@ function wireStudentListActions() {
         try {
           const rows = parseCSV(reader.result);
           let count = 0;
+          let dups = 0;
+          let lastErrMsg = null;
+
           for (const r of rows) {
             if (!r.name) continue;
-            await fetch("/api/students/", {
+            const res = await fetch("/api/students/", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                uid: newUid(),
+                uid: r.uid || newUid(),
                 student_number: r.studentNumber || r.studentnumber || "N/A",
                 name: r.name,
                 course: r.course || COURSES[0],
                 year: r.year || YEARS[0],
                 section: r.section || "A",
-                status: "Active",
+                status: r.status || "Active",
               }),
             });
-            count++;
+
+            if (res.ok) {
+              count++;
+            } else {
+              dups++;
+              try {
+                const errData = await res.json();
+                if (errData && errData.message) lastErrMsg = errData.message;
+              } catch (e) {}
+            }
           }
-          toast(count + " students imported", "ok");
+
+          if (dups > 0) {
+            toast(lastErrMsg || `Imported ${count} student(s) (${dups} skipped due to duplicates)`, "info");
+          } else {
+            toast(`Successfully imported ${count} student(s)`, "ok");
+          }
           await loadData();
         } catch (err) {
           toast("Could not parse CSV file", "err");

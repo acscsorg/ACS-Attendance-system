@@ -4,6 +4,7 @@ from collections import defaultdict
 from django.shortcuts import render, get_object_or_404
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.db import IntegrityError
 from django.db.models import Q
 from django.utils.dateparse import parse_datetime
 from django.contrib.auth.hashers import check_password, make_password
@@ -37,17 +38,27 @@ def student_list_create(request):
     
     elif request.method == 'POST':
         data = json.loads(request.body)
-        student = Student.objects.create(
-            uid=data['uid'],
-            student_number=data['student_number'],
-            first_name=data.get('first_name', ''),
-            last_name=data.get('last_name', ''),
-            name=data['name'],
-            course=data.get('course', 'BS Computer Science'),
-            year=data['year'],
-            section=data['section'],
-            status=data.get('status', 'Active')
-        )
+        try:
+            student = Student.objects.create(
+                uid=data['uid'],
+                student_number=data['student_number'],
+                first_name=data.get('first_name', ''),
+                last_name=data.get('last_name', ''),
+                name=data['name'],
+                course=data.get('course', 'BS Computer Science'),
+                year=data['year'],
+                section=data['section'],
+                status=data.get('status', 'Active')
+            )
+        except IntegrityError as e:
+            err_str = str(e).lower()
+            if 'uid' in err_str or 'unique' in err_str or 'student_number' in err_str:
+                return JsonResponse({
+                    'success': False,
+                    'message': f"Upload failed: A student with ID '{data.get('uid', '')}' or Student Number '{data.get('student_number', '')}' already exists."
+                }, status=409)
+            return JsonResponse({'success': False, 'message': 'Database integrity error creating student.'}, status=400)
+
         res_data = {
             'id': student.id,
             'uid': student.uid,

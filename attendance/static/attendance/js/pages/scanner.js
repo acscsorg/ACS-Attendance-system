@@ -33,6 +33,7 @@ function renderScanner() {
         ${openEvents.length ? openEvents.map((e) => `<option value="${e.id}" ${String(e.id) === String(state.scannerEventId) ? "selected" : ""}>${esc(e.name)} — ${fmtDate(e.date)}</option>`).join("") : "<option>No open events</option>"}
       </select>
       <button class="btn ${state.scannerActive ? "btn-danger" : "btn-dark"} btn-sm" id="toggleCameraBtn" ${!openEvents.length ? "disabled" : ""}>${state.scannerActive ? "Stop Camera" : "Start Camera"}</button>
+      <button class="btn btn-sm" id="switchCameraBtn" ${!openEvents.length ? "disabled" : ""}>📷 Switch (${state.cameraFacing === "environment" ? "Rear" : "Front"})</button>
     </div>
   </div>
   <div class="scan-layout">
@@ -254,46 +255,26 @@ function startScanner() {
   const onScanSuccess = (decodedText) => handleScan(decodedText);
   const onScanError = () => {};
 
-  Html5Qrcode.getCameras()
-    .then((devices) => {
-      if (devices && devices.length) {
-        const cameraId = devices[0].id;
-        html5QrInstance
-          .start(cameraId, config, onScanSuccess, onScanError)
-          .then(() => {
-            state.scannerActive = true;
-          })
-          .catch(() => startWithFacingMode());
-      } else {
-        startWithFacingMode();
-      }
-    })
-    .catch(() => startWithFacingMode());
+  const primaryFacing = state.cameraFacing || "environment";
+  const fallbackFacing = primaryFacing === "environment" ? "user" : "environment";
 
-  function startWithFacingMode() {
-    html5QrInstance
-      .start({ facingMode: "user" }, config, onScanSuccess, onScanError)
-      .then(() => {
-        state.scannerActive = true;
-      })
-      .catch(() => {
-        html5QrInstance
-          .start(
-            { facingMode: "environment" },
-            config,
-            onScanSuccess,
-            onScanError,
-          )
-          .then(() => {
-            state.scannerActive = true;
-          })
-          .catch(() => {
-            toast("Camera unavailable — use manual UID entry", "err");
-            html5QrInstance = null;
-            state.scannerActive = false;
-          });
-      });
-  }
+  html5QrInstance
+    .start({ facingMode: primaryFacing }, config, onScanSuccess, onScanError)
+    .then(() => {
+      state.scannerActive = true;
+    })
+    .catch(() => {
+      html5QrInstance
+        .start({ facingMode: fallbackFacing }, config, onScanSuccess, onScanError)
+        .then(() => {
+          state.scannerActive = true;
+        })
+        .catch(() => {
+          toast("Camera unavailable — use manual UID entry", "err");
+          html5QrInstance = null;
+          state.scannerActive = false;
+        });
+    });
 }
 function stopScanner() {
   if (html5QrInstance) {
@@ -318,6 +299,17 @@ function afterRenderScanner() {
       state.scannerActive ? stopScanner() : startScanner();
       renderPage();
     };
+  const switchBtn = document.getElementById("switchCameraBtn");
+  if (switchBtn) {
+    switchBtn.onclick = () => {
+      state.cameraFacing = state.cameraFacing === "environment" ? "user" : "environment";
+      if (state.scannerActive) {
+        stopScanner();
+        startScanner();
+      }
+      renderPage();
+    };
+  }
   const form = document.getElementById("manualScanForm");
   if (form)
     form.onsubmit = (e) => {
